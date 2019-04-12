@@ -1,0 +1,139 @@
+#! /bin/sh
+set -eu
+
+# grub-mkconfig helper script.
+
+#
+#  PSEUDOCODE from the spec - Remove once implemented
+#
+# For each pool on the system
+# identify root datasets.
+# For each root dataset
+    # Retrieve /etc/machine-id (/!\ etc can be a children datasets, which is fine as long as it’s in ROOT/)
+    # Retrieve /etc/os-release (Add support to os-prober?)
+    # Retrieve user property org.zsys:last-used from the dataset.
+    # Retrieve snapshots from the datasets.
+# For each machine-id:
+    # If zsys:
+        # sort(datasets by last-used or snapshot timestamp) desc order
+    # else:
+        # datasets = [dataset (first) which has mountpoint != legacy and != none] (not coming from a cloned snapshot) + [snapshots of that dataset, ordered by snapshot name]
+    # print(“os-released” os-probed) of datasets[0]
+        # rpool=dataset_path
+    # print(“os-released” os-probed) of datasets[0]
+        # rpool=dataset_pat
+        # option recovery mode
+    # print(History)
+        # [SUBMENU]
+        # for each dataset in datasets[1..]:
+            # print (revert to %s timestamp) + if os-probed_name != datasets[0] os-probed-name -> print os-probed_name
+            # [SUBMENU]
+            # Revert system
+                # rpool=data_path (including @snapshot)
+            # Revert system (recovery mode)
+                # rpool=data_path (including @snapshot)
+                # option recovery mode
+
+# If current system is zfs with zsys: disable 10_linux.
+
+initial_pools=$(zpool list | awk '{if (NR>1) print $1}')
+MNTDIR=$(mktemp -d ${TMPDIR:-/tmp}/zfsmnt.XXXXXX)
+
+
+RC=0
+on_exit() {
+    # Restore initial zpool import state
+    for pool in $(get_pools); do
+        if ! echo "${initial_pools}" | grep -qw "${pool}"; then
+            zpool export "${pool}"
+        fi
+    done
+
+    mountpoint -q "${MNTDIR}"  && umount "${MNTDIR}" || true
+    rmdir "${MNTDIR}"
+    exit "${RC}"
+}
+trap on_exit EXIT INT QUIT ABRT PIPE TERM
+
+# List ONLINE and DEGRADED pools
+get_pools() {
+    # We have to ignore zpool import output, as potentially multiple / will be available,
+    # and we need to autodetect all zpools this way with their real mountpoints.
+    zpool import -a -d $HOME 2>/dev/null || true  # TODO: remove -d $HOME
+    zpool list | awk '{if (NR>1) print $1}'
+}
+
+# List all the dataset with a root mountpoint
+get_root_datasets() {
+    #zpool/ROOT/
+    #/!\ -> /etc
+    zfs list -H -oname,canmount,mountpoint -t filesystem | awk '/\t(on|noauto)\t\/$/ {print $1}'
+}
+
+
+# Given a filesystem or snapshot dataset, returns dataset|machine id|pretty name|last used
+# $1 is dataset we want information from
+# $2 is the temporary mount directory to use
+get_dataset_info() {
+    local dataset="$1"
+    local mntdir="$2"
+
+    local base_dataset="${dataset}"
+    local etc_dir="${mntdir}/etc"
+    local snapshot_name=""
+    local snapshot_name=""
+    # For snapshot we extract the parent dataset
+    if echo ${dataset}|grep -q '@'; then
+        base_dataset=$(echo ${dataset}|cut -d '@' -f1)
+        snapshot_name=$(echo ${dataset}|cut -d '@' -f2)
+        etc_dir="${mntdir}/.zfs/snapshot/${snapshot_name}/etc"
+    fi
+
+    mount -o zfsutil -t zfs "${base_dataset}" "${mntdir}"
+
+    # Attempt to mount a /etc if there is none on the root dataset
+    if [ -z "$(ls ${etc_dir} 2>/dev/null)" ]; then
+        if ! mount -o zfsutil -t zfs "${base_dataset}"/etc "${mntdir}/etc"; then
+            echo "W: Failed to find a valid /etc directory for dataset "${dataset}". Ignoring" >&2
+            umount "${mntdir}"
+            return
+        fi
+        if [ -n "${snapshot_name}" ]; then
+            etc_dir="${mntdir}/etc/.zfs/snapshot/${snapshot_name}"
+        fi
+    fi
+
+    machine_id=`cat "${etc_dir}"/machine-id`
+    pretty_name=`( . "${etc_dir}"/os-release && echo $PRETTY_NAME )`
+
+    # snapshot: last_used is dataset creation time
+    if [ -n "${snapshot_name}" ]; then
+        creation_date="$(LC_TIME=posix TZ=Etc/UTC zfs get -H creation "${dataset}" | awk -F '\t' '{print $3}')"
+        # Convert to epoch
+        last_used=$(date -d "${creation_date}" +%s)
+    # otherwise, last_used is manually marked at boot/shutdown on a root dataset by zsys or - for non zsys
+    else
+        last_used=$(zfs get -H org.zsys:last-used "${dataset}" | awk '{print $3}')
+    fi
+
+    echo "${dataset}|${machine_id}|${pretty_name}|${last_used}"
+
+    mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
+    umount "${mntdir}" || true
+}
+
+# Import all available pools on the system
+_=$(get_pools)
+
+BOOTLIST=""
+for dataset in $(get_root_datasets); do
+    # get information from current root dataset
+    BOOTLIST="${BOOTLIST}$(get_dataset_info ${dataset} ${MNTDIR})\n"
+
+    # get information from snapshots of this root dataset
+    for snapshot_dataset in $(zfs list -r -H -oname -t snapshot "${dataset}" | grep "${dataset}"@); do
+        BOOTLIST="${BOOTLIST}$(get_dataset_info ${snapshot_dataset} ${MNTDIR})\n"
+    done
+done
+
+echo $BOOTLIST
