@@ -1,5 +1,6 @@
 #! /bin/sh
 set -eu
+#set -x
 
 # grub-mkconfig helper script.
 
@@ -33,6 +34,7 @@ set -eu
             # Revert system (recovery mode)
                 # rpool=data_path (including @snapshot)
                 # option recovery mode
+    # date -d @timestamp -> to convert to current timezone human readable date
 
 # If current system is zfs with zsys: disable 10_linux.
 
@@ -70,6 +72,141 @@ get_root_datasets() {
     zfs list -H -oname,canmount,mountpoint -t filesystem | awk '/\t(on|noauto)\t\/$/ {print $1}'
 }
 
+# find if given datasets can be mounted for directory and return its path (snapshot or real path)
+# $1 is our current dataset name
+# $2 directory path we look for (cannot contains /)
+# $3 is the temporary mount directory to use
+# $4 is the optional snapshot name
+# return path for directory (which can be a mountpoint)
+validate_system_dataset() {
+    local dataset="$1"
+    local directory="$2"
+    local mntdir="$3"
+    local snapshot_name="$4"
+
+    local candidate_path="${mntdir}/${directory}"
+
+    if zfs list "${dataset}" >/dev/null 2>&1; then
+        if ! mount -o zfsutil -t zfs "${dataset}" "${candidate_path}"; then
+            echo "W: Failed to find a valid /etc directory for dataset "${dataset}". Ignoring" >&2
+            return
+        fi
+    fi
+    if [ -n "${snapshot_name}" ]; then
+        candidate_path="${candidate_path}/.zfs/snapshot/${snapshot_name}/${directory}"
+    fi
+
+    if [ -n "$(ls ${candidate_path} 2>/dev/null)" ]; then
+        echo "${candidate_path}"
+        return
+    fi
+}
+
+# Detect system directory relevant to the other, trying to find the ones associated on the current dataset or snapshot/
+# System directory should be at most a direct child dataset of main datasets (no recursivity)
+# We can fallback trying other zfs pools if no match has been found.
+# $1 is our current dataset name (which can have @snapshot name)
+# $2 directory path we look for (cannot contains /)
+# $3 is the temporary mount directory to use
+# return path for directory (which can be a mountpoint)
+get_system_directory() {
+    local dataset_path="$1"
+    local directory="$2"
+    local mntdir="$3"
+
+    local candidate_path="${mntdir}/${directory}"
+
+    # 1. Look for /etc/fstab first (which will mount even on top of non empty $directory)
+    local directory_in_fstab="false"
+    if [ -f "${mntdir}/etc/fstab" ]; then
+        mount_cmd=$(awk "/\s${directory}\s/ {print \"-t\", \$3, \$1}" "${mntdir}/etc/fstab")
+        if [ -n "${mount_cmd}" ]; then
+            mount "${mount_cmd}" "${candidate_path}"
+            directory_in_fstab="true"
+        fi
+    fi
+
+    # If directory isn't empty. Only count if coming from /etc/fstab. Will be
+    # handled below otherwise as we are interested in potential snapshots.
+    if [ "${directory_in_fstab}" = "true" -a -n "$(ls ${candidate_path} 2>/dev/null)" ]; then
+        echo "${candidate_path}"
+        return
+    fi
+
+    # 2. Handle zfs case, which can be a snapshots.
+
+    local base_dataset_path="${dataset_path}"
+    local snapshot_name=""
+    # For snapshots we extract the parent dataset
+    if echo ${dataset_path} | grep -q '@'; then
+        base_dataset_path=$(echo ${dataset_path}|cut -d '@' -f1)
+        snapshot_name=$(echo ${dataset_path}|cut -d '@' -f2)
+    fi
+    base_dataset_name="${base_dataset_path##*/}"
+    base_pool="$(echo "${base_dataset_path}" | cut -d'/' -f1)"
+
+    # 2.a) Look for child dataset included in base dataset, which needs to hold same snapshot if any
+    candidate_path=$(validate_system_dataset "${base_dataset_path}/${directory}" "${directory}" "${mntdir}" "${snapshot_name}")
+    if [ -n "${candidate_path}" ]; then
+        echo "${candidate_path}"
+        return
+    fi
+
+    # 2.b) Look for current dataset (which is already mounted as /)
+    candidate_path="${mntdir}/${directory}"
+    if [ -n "${snapshot_name}" ]; then
+        candidate_path="${mntdir}/.zfs/snapshot/${snapshot_name}/${directory}"
+    fi
+    if [ -n "$(ls ${candidate_path} 2>/dev/null)" ]; then
+        echo "${candidate_path}"
+        return
+    fi
+
+    # 2.c) Look for every datatsets in every pool (starting with current pool) which holds:
+    # - the same dataset name than our base_dataset_name
+    # - mountpoint=directory
+    # - canmount!=off
+    all_basename_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\/'"${base_dataset_name}"'\s+(on|noauto)\s+\/'"${directory}"'/ {print $1}')"
+    # Start with current pool
+    for dataset in $(echo "${all_basename_datasets}" | grep -E "^$base_pool"); do
+        candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot}")
+        if [ -n "${candidate_path}" ]; then
+            echo "${candidate_path}"
+            return
+        fi
+    done
+    # Now check other pools
+    for dataset in $(echo "${all_basename_datasets}" | grep -vE "^$base_pool"); do
+        candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot}")
+        if [ -n "${candidate_path}" ]; then
+            echo "${candidate_path}"
+            return
+        fi
+    done
+
+    # 2.d) If we didn't find anything yet: check for persistent directories; no snapshot associated:
+    all_persistent_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\s+on\s+\/'"${directory}"'/ {print $1}')"
+    # Start with current pool
+    for dataset in $(echo "${all_basename_datasets}" | grep -E "^$base_pool"); do
+        candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "")
+        if [ -n "${candidate_path}" ]; then
+            echo "${candidate_path}"
+            return
+        fi
+    done
+    # Now check other pools
+    for dataset in $(echo "${all_basename_datasets}" | grep -vE "^$base_pool"); do
+        candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "")
+        if [ -n "${candidate_path}" ]; then
+            echo "${candidate_path}"
+            return
+        fi
+    done
+
+    echo "W: Couldn't find any valid ${directory} directory for dataset ${dataset_path}." >&2
+    return
+}
+
 
 # Given a filesystem or snapshot dataset, returns dataset|machine id|pretty name|last used
 # $1 is dataset we want information from
@@ -80,34 +217,28 @@ get_dataset_info() {
 
     local base_dataset="${dataset}"
     local etc_dir="${mntdir}/etc"
-    local snapshot_name=""
-    local snapshot_name=""
+    local is_snapshot="false"
     # For snapshot we extract the parent dataset
     if echo ${dataset}|grep -q '@'; then
         base_dataset=$(echo ${dataset}|cut -d '@' -f1)
-        snapshot_name=$(echo ${dataset}|cut -d '@' -f2)
-        etc_dir="${mntdir}/.zfs/snapshot/${snapshot_name}/etc"
+        is_snapshot="true"
     fi
 
     mount -o zfsutil -t zfs "${base_dataset}" "${mntdir}"
 
-    # Attempt to mount a /etc if there is none on the root dataset
-    if [ -z "$(ls ${etc_dir} 2>/dev/null)" ]; then
-        if ! mount -o zfsutil -t zfs "${base_dataset}"/etc "${mntdir}/etc"; then
-            echo "W: Failed to find a valid /etc directory for dataset "${dataset}". Ignoring" >&2
-            umount "${mntdir}"
-            return
-        fi
-        if [ -n "${snapshot_name}" ]; then
-            etc_dir="${mntdir}/etc/.zfs/snapshot/${snapshot_name}"
-        fi
+    etc_dir=$(get_system_directory "${dataset}" "etc" "${mntdir}")
+    if [ -z  "${etc_dir}" ]; then
+        echo "W: Ignoring ${dataset}" >&2
+        mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
+        umount "${mntdir}"
+        return
     fi
 
     machine_id=`cat "${etc_dir}"/machine-id`
     pretty_name=`( . "${etc_dir}"/os-release && echo $PRETTY_NAME )`
 
     # snapshot: last_used is dataset creation time
-    if [ -n "${snapshot_name}" ]; then
+    if [ "${is_snapshot}" = "true" ]; then
         creation_date="$(LC_TIME=posix TZ=Etc/UTC zfs get -H creation "${dataset}" | awk -F '\t' '{print $3}')"
         # Convert to epoch
         last_used=$(date -d "${creation_date}" +%s)
