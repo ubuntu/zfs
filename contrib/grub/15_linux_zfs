@@ -204,7 +204,7 @@ get_system_directory() {
     # 2.d) If we didn't find anything yet: check for persistent directories; no snapshot associated:
     all_persistent_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\s+on\s+\/'"${directory}"'/ {print $1}')"
     # Start with current pool
-    for dataset in $(echo "${all_basename_datasets}" | grep -E "^$base_pool"); do
+    for dataset in $(echo "${all_persistent_datasets}" | grep -E "^$base_pool"); do
         candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "")
         if [ -n "${candidate_path}" ]; then
             echo "${candidate_path}"
@@ -212,7 +212,7 @@ get_system_directory() {
         fi
     done
     # Now check other pools
-    for dataset in $(echo "${all_basename_datasets}" | grep -vE "^$base_pool"); do
+    for dataset in $(echo "${all_persistent_datasets}" | grep -vE "^$base_pool"); do
         candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "")
         if [ -n "${candidate_path}" ]; then
             echo "${candidate_path}"
