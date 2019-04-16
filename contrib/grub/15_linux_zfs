@@ -87,21 +87,28 @@ validate_system_dataset() {
     local mntdir="$3"
     local snapshot_name="$4"
 
-    local candidate_path="${mntdir}/${directory}"
+    local mount_path="${mntdir}/${directory}"
 
     if zfs list "${dataset}" >/dev/null 2>&1; then
-        if ! mount -o zfsutil -t zfs "${dataset}" "${candidate_path}"; then
+        if ! mount -o zfsutil -t zfs "${dataset}" "${mount_path}"; then
             grub_warn "Failed to find a valid directory '${directory}' for dataset '${dataset}@${snapshot_name}'. Ignoring"
             return
         fi
     fi
+
+    local candidate_path="${mount_path}"
     if [ -n "${snapshot_name}" ]; then
-        candidate_path="${candidate_path}/.zfs/snapshot/${snapshot_name}/${directory}"
+        candidate_path="${candidate_path}/.zfs/snapshot/${snapshot_name}"
+        if ! mountpoint -q "${mount_path}"; then
+            candidate_path="${candidate_path}/${directory}"
+        fi
     fi
 
     if [ -n "$(ls ${candidate_path} 2>/dev/null)" ]; then
         echo "${candidate_path}"
         return
+    else
+        mountpoint -q "${mount_path}" && umount "${mount_path}" || true
     fi
 }
 
