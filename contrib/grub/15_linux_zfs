@@ -118,20 +118,26 @@ validate_system_dataset() {
 # $1 is our current dataset name (which can have @snapshot name)
 # $2 directory path we look for (cannot contains /)
 # $3 is the temporary mount directory to use
+# $4 is the optional etc directory (if not $2 is not etc itself)
 # return path for directory (which can be a mountpoint)
 get_system_directory() {
     local dataset_path="$1"
     local directory="$2"
     local mntdir="$3"
+    local etc_dir="$4"
+
+    if [ -z "${etc_dir}" ]; then
+        etc_dir="${mntdir}/etc"
+    fi
 
     local candidate_path="${mntdir}/${directory}"
 
     # 1. Look for /etc/fstab first (which will mount even on top of non empty $directory)
     local directory_in_fstab="false"
-    if [ -f "${mntdir}/etc/fstab" ]; then
-        mount_cmd=$(awk "/\s${directory}\s/ {print \"-t\", \$3, \$1}" "${mntdir}/etc/fstab")
-        if [ -n "${mount_cmd}" ]; then
-            mount "${mount_cmd}" "${candidate_path}"
+    if [ -f "${etc_dir}/fstab" ]; then
+        mount_args=$(awk '/^[^#].*\s\/'"${directory}"'\s/ {print "-t", $3, $1}' "${etc_dir}/fstab")
+        if [ -n "${mount_args}" ]; then
+            mount ${mount_args} "${candidate_path}"
             directory_in_fstab="true"
         fi
     fi
@@ -236,7 +242,8 @@ get_dataset_info() {
 
     mount -o zfsutil -t zfs "${base_dataset}" "${mntdir}"
 
-    etc_dir=$(get_system_directory "${dataset}" "etc" "${mntdir}")
+    # read machine-id/os-release from /etc
+    etc_dir=$(get_system_directory "${dataset}" "etc" "${mntdir}" "")
     if [ -z  "${etc_dir}" ]; then
         grub_warn "Ignoring ${dataset}"
         mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
