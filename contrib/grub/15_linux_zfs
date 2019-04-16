@@ -201,7 +201,7 @@ get_system_directory() {
         fi
     done
 
-    # 2.d) If we didn't find anything yet: check for persistent directories; no snapshot associated:
+    # 2.d) If we didn't find anything yet: check for persistent directories corresponding to our mountpoint, with canmount=on without any snapshot associated:
     all_persistent_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\s+on\s+\/'"${directory}"'/ {print $1}')"
     # Start with current pool
     for dataset in $(echo "${all_persistent_datasets}" | grep -E "^$base_pool"); do
@@ -254,6 +254,91 @@ get_dataset_info() {
 
     machine_id=`cat "${etc_dir}"/machine-id`
     pretty_name=`( . "${etc_dir}"/os-release && echo $PRETTY_NAME )`
+    mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
+
+    # read available kernels from /boot
+    boot_dir=$(get_system_directory "${dataset}" "boot" "${mntdir}" "${etc_dir}")
+    if [ -z  "${boot_dir}" ]; then
+        grub_warn "Ignoring ${dataset}"
+        mountpoint -q ${mntdir}/boot && umount "${mntdir}/boot" || true
+        umount "${mntdir}"
+        return
+    fi
+
+    machine=`uname -m`
+    case "$machine" in
+        i?86) GENKERNEL_ARCH="x86" ;;
+        mips|mips64) GENKERNEL_ARCH="mips" ;;
+        mipsel|mips64el) GENKERNEL_ARCH="mipsel" ;;
+        arm*) GENKERNEL_ARCH="arm" ;;
+        *) GENKERNEL_ARCH="$machine" ;;
+    esac
+
+    initrd_list=""
+    kernel_list=""
+    for linux in $(find $boot_dir -maxdepth 1 -type f -regex '.*/\(vmlinuz\|vmlinux\|kernel\)-.*'|sort -V); do
+        if ! grub_file_is_not_garbage "$linux" ; then
+            continue
+        fi
+
+        # filters entry if efi/non efi
+        case $linux in
+            *.efi.signed)
+                if ! test -d /sys/firmware/efi; then
+                    continue
+                fi
+            ;;
+            *)
+                if test -d /sys/firmware/efi; then
+                    continue
+                fi
+            ;;
+        esac
+
+        linux_basename=`basename $linux`
+        linux_dirname=`dirname $linux`
+        version=`echo $linux_basename | sed -e "s,^[^0-9]*-,,g"`
+        alt_version=`echo $version | sed -e "s,\.old$,,g"`
+
+        gettext_printf "Found linux image: %s in %s\n" "${linux_basename}" "${dataset}" >&2
+
+        initrd=
+        for i in "initrd.img-${version}" "initrd-${version}.img" "initrd-${version}.gz" \
+            "initrd-${version}" "initramfs-${version}.img" \
+            "initrd.img-${alt_version}" "initrd-${alt_version}.img" \
+            "initrd-${alt_version}" "initramfs-${alt_version}.img" \
+            "initramfs-genkernel-${version}" \
+            "initramfs-genkernel-${alt_version}" \
+            "initramfs-genkernel-${GENKERNEL_ARCH}-${version}" \
+            "initramfs-genkernel-${GENKERNEL_ARCH}-${alt_version}"; do
+            if test -e "${linux_dirname}/${i}" ; then
+                initrd="$i"
+                break
+            fi
+        done
+
+        if test -z "${initrd}" ; then
+            grub_warn "Couldn't find any valid initrd for dataset ${dataset}."
+            continue
+        fi
+
+        gettext_printf "Found initrd image: %s in %s\n" "${initrd}" "${dataset}" >&2
+
+        rel_linux_dirname=`make_system_path_relative_to_its_root $linux_dirname`
+
+        initrd_list="${rel_linux_dirname}/${initrd}|${initrd_list}"
+        kernel_list="${rel_linux_dirname}/${linux_basename}|${kernel_list}"
+    done
+
+    initrd_list=${initrd_list%|}
+    kernel_list=${kernel_list%|}
+
+    initrd_device=`${grub_probe} --target=device ${boot_dir}`
+
+    mountpoint -q ${mntdir}/boot && umount "${mntdir}/boot" || true
+
+    # for zsys snapshots: we want to know which kernel we successful last booted with
+    last_booted_kernel=$(zfs get -H org.zsys:last-booted-kernel "${dataset}" | awk '{print $3}')
 
     # snapshot: last_used is dataset creation time
     if [ "${is_snapshot}" = "true" ]; then
@@ -265,9 +350,12 @@ get_dataset_info() {
         last_used=$(zfs get -H org.zsys:last-used "${dataset}" | awk '{print $3}')
     fi
 
-    echo "${dataset}|${machine_id}|${pretty_name}|${last_used}"
+    if [ -n "${initrd_list}" -a -n "${kernel_list}" ]; then
+        echo "${dataset}\t${machine_id}\t${pretty_name}\t${last_used}\t${initrd_device}\t${initrd_list}\t${kernel_list}\t${last_booted_kernel}"
+    else
+        grub_warn "didn't find any valid initrd or kernel."
+    fi
 
-    mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
     umount "${mntdir}" || true
 }
 
