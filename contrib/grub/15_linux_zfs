@@ -1,6 +1,9 @@
 #! /bin/sh
-set -eu
-#set -x
+set -e
+
+. "/usr/share/grub/grub-mkconfig_lib"
+
+set -u
 
 # grub-mkconfig helper script.
 
@@ -88,7 +91,7 @@ validate_system_dataset() {
 
     if zfs list "${dataset}" >/dev/null 2>&1; then
         if ! mount -o zfsutil -t zfs "${dataset}" "${candidate_path}"; then
-            echo "W: Failed to find a valid /etc directory for dataset "${dataset}". Ignoring" >&2
+            grub_warn "Failed to find a valid directory '${directory}' for dataset '${dataset}@${snapshot_name}'. Ignoring"
             return
         fi
     fi
@@ -203,7 +206,7 @@ get_system_directory() {
         fi
     done
 
-    echo "W: Couldn't find any valid ${directory} directory for dataset ${dataset_path}." >&2
+    grub_warn "Failed to find a valid directory '${directory}' for dataset '${dataset_path}'. Ignoring"
     return
 }
 
@@ -228,7 +231,7 @@ get_dataset_info() {
 
     etc_dir=$(get_system_directory "${dataset}" "etc" "${mntdir}")
     if [ -z  "${etc_dir}" ]; then
-        echo "W: Ignoring ${dataset}" >&2
+        grub_warn "Ignoring ${dataset}"
         mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
         umount "${mntdir}"
         return
