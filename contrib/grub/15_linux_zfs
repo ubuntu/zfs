@@ -117,14 +117,16 @@ validate_system_dataset() {
 # We can fallback trying other zfs pools if no match has been found.
 # $1 is our current dataset name (which can have @snapshot name)
 # $2 directory path we look for (cannot contains /)
-# $3 is the temporary mount directory to use
-# $4 is the optional etc directory (if not $2 is not etc itself)
+# $3 restrict_to_same_pool (true|false) force looking for dataset with the same basename in the current dataset pool only
+# $4 is the temporary mount directory to use
+# $5 is the optional etc directory (if not $2 is not etc itself)
 # return path for directory (which can be a mountpoint)
 get_system_directory() {
     local dataset_path="$1"
     local directory="$2"
-    local mntdir="$3"
-    local etc_dir="$4"
+    local restrict_to_same_pool="$3"
+    local mntdir="$4"
+    local etc_dir="$5"
 
     if [ -z "${etc_dir}" ]; then
         etc_dir="${mntdir}/etc"
@@ -193,13 +195,15 @@ get_system_directory() {
     done
 
     # Now check other pools
-    for dataset in $(echo "${all_basename_datasets}" | grep -vE "^$base_pool"); do
-        candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot_name}")
-        if [ -n "${candidate_path}" ]; then
-            echo "${candidate_path}"
-            return
-        fi
-    done
+    if [ "${restrict_to_same_pool}" != "true" ]; then
+        for dataset in $(echo "${all_basename_datasets}" | grep -vE "^$base_pool"); do
+            candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot_name}")
+            if [ -n "${candidate_path}" ]; then
+                echo "${candidate_path}"
+                return
+            fi
+        done
+    fi
 
     # 2.d) If we didn't find anything yet: check for persistent directories corresponding to our mountpoint, with canmount=on without any snapshot associated:
     all_persistent_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\s+on\s+\/'"${directory}"'/ {print $1}')"
@@ -244,7 +248,7 @@ get_dataset_info() {
     mount -o zfsutil -t zfs "${base_dataset}" "${mntdir}"
 
     # read machine-id/os-release from /etc
-    etc_dir=$(get_system_directory "${dataset}" "etc" "${mntdir}" "")
+    etc_dir=$(get_system_directory "${dataset}" "etc" "true" "${mntdir}" "")
     if [ -z  "${etc_dir}" ]; then
         grub_warn "Ignoring ${dataset}"
         mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
@@ -257,7 +261,7 @@ get_dataset_info() {
     mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
 
     # read available kernels from /boot
-    boot_dir=$(get_system_directory "${dataset}" "boot" "${mntdir}" "${etc_dir}")
+    boot_dir=$(get_system_directory "${dataset}" "boot" "false" "${mntdir}" "${etc_dir}")
     if [ -z  "${boot_dir}" ]; then
         grub_warn "Ignoring ${dataset}"
         mountpoint -q ${mntdir}/boot && umount "${mntdir}/boot" || true
