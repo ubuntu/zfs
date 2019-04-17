@@ -64,7 +64,7 @@ trap on_exit EXIT INT QUIT ABRT PIPE TERM
 get_pools() {
     # We have to ignore zpool import output, as potentially multiple / will be available,
     # and we need to autodetect all zpools this way with their real mountpoints.
-    zpool import -a -d $HOME 2>/dev/null || true  # TODO: remove -d $HOME
+    zpool import -a -N -d $HOME 2>/dev/null || true  # TODO: remove -d $HOME
     zpool list | awk '{if (NR>1) print $1}'
 }
 
