@@ -363,18 +363,31 @@ get_dataset_info() {
     umount "${mntdir}" || true
 }
 
+# Scan available boot options and returns in a formatted list
+# $1 is the temporary mount directory to use
+bootlist() {
+    local mntdir="$1"
+    local boot_list=""
+
+    for dataset in $(get_root_datasets); do
+        # get information from current root dataset
+        boot_list="${boot_list}$(get_dataset_info ${dataset} ${mntdir})\n"
+
+        # get information from snapshots of this root dataset
+        for snapshot_dataset in $(zfs list -r -H -oname -t snapshot "${dataset}" | grep "${dataset}"@); do
+            boot_list="${boot_list}$(get_dataset_info ${snapshot_dataset} ${mntdir})\n"
+        done
+    done
+    echo "${boot_list}"
+}
+
 # Import all available pools on the system
 _=$(get_pools)
 
-BOOTLIST=""
-for dataset in $(get_root_datasets); do
-    # get information from current root dataset
-    BOOTLIST="${BOOTLIST}$(get_dataset_info ${dataset} ${MNTDIR})\n"
+BOOTLIST=$(bootlist ${MNTDIR})
 
-    # get information from snapshots of this root dataset
-    for snapshot_dataset in $(zfs list -r -H -oname -t snapshot "${dataset}" | grep "${dataset}"@); do
-        BOOTLIST="${BOOTLIST}$(get_dataset_info ${snapshot_dataset} ${MNTDIR})\n"
-    done
-done
-
-echo $BOOTLIST
+GRUB_LINUX_ZFS_EXPORT_BOOTLIST=${GRUB_LINUX_ZFS_EXPORT_BOOTLIST:-}
+if [ -n "${GRUB_LINUX_ZFS_EXPORT_BOOTLIST}" ]; then
+    echo "${BOOTLIST}" > ${GRUB_LINUX_ZFS_EXPORT_BOOTLIST}
+    return
+fi
