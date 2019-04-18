@@ -383,6 +383,207 @@ bootlist() {
     echo "${boot_list}"
 }
 
+# Generate metadata from a BOOTLIST that will subsequently used to generate
+# the final grub menu entries
+generate_grub_menu_metadata() {
+
+echo "$1" | awk '
+BEGIN {
+    FS = "\t"
+    OFS = "\t"
+}
+
+
+# Return main entry index
+function get_main_entry(records) {
+    idx = ""
+    for (i in records) {
+
+        # Exclude snapshots
+        if ( index(records[i]["dataset"], "@") > 0  ) {
+            continue
+        }
+
+        # Non zsys or zsys with no "lastused", take first element which is not a snapshot
+        if ( idx == "" ) {
+            idx = i
+        }
+
+        # Get most recent entry for zsys systems
+        if ( records[i]["zsys"] == "yes"  ) {
+            if ( records[i]["lastused"] > records[idx]["lastused"] ) {
+                idx = i
+            }
+        }
+    }
+
+    return idx
+}
+
+# Print the main entry
+# param m: main entry to print
+function print_main_entry(m) {
+    split(m["initrds"], initrds, "|")
+    split(m["kernels"], kernels, "|")
+
+    print m["machineid"],
+        m["zsys"],
+        "main",
+        m["name"],
+        m["dataset"],
+        m["device"],
+        initrds[1],
+        kernels[1]
+}
+
+# Print advanced entries for a given main entry
+# param m: record to display
+function print_advanced_entries(m) {
+    split(m["initrds"], initrds, "|")
+    split(m["kernels"], kernels, "|")
+
+    for ( k in kernels ) {
+        was_last_used_kernel = "false"
+
+        if ( kernels[k] == m["last_booted_kernel"] ) {
+            was_last_used_kernel = "true"
+        }
+
+        print m["machineid"],
+            m["zsys"],
+            "advanced",
+            m["name"],
+            m["dataset"],
+            m["device"],
+            initrds[k],
+            kernels[k],
+            was_last_used_kernel
+    }
+}
+
+# Print history for a given machine_id
+function print_history_entries(records, m) {
+
+    main_dataset_name = m["name"]  # Save it because the record is deleted afterwards
+
+    # Creates an array of last_used that will then sort and traverse in
+    # reverse order to display snapshot from most newest to oldest and ending
+    # with snapshot not managed by zsys
+    i=1
+    delete last_used
+    for (r in records) {
+        # Skip main entry, as treated in other menus
+        if ( records[r]["dataset"] == m["dataset"] ) {
+            delete records[r]
+            continue
+        }
+        last_used[i] = records[r]["lastused"]
+        i++
+    }
+
+    n = asort(last_used, last_used_sorted)
+    # Traverse snapshots in reverse order
+    for (i = n; i > 0; i--) {
+        for (r in records) {
+            if (records[r]["lastused"] == last_used_sorted[i]) {
+                name = ""
+                # Compute snap/filesystem dataset name
+                snapname = records[r]["dataset"]
+                if ( index(records[r]["dataset"], "@") > 0  ) {
+                    sub(".*@", "", snapname)
+                } else {
+                    sub(".*/", "", snapname)
+                }
+
+                # We keep the snapname only if it is not only a zsys auto snapshot
+                if ( match(snapname, "^zsys_") != 0 ) {
+                    name = "zsyssnapshot"
+                } else {
+                    name = snapname
+                }
+
+                # Append version name if different from main dataset (snapshot before a release upgrade)
+                if ( records[r]["name"] != main_dataset_name ) {
+                    if ( name != "zsyssnapshot" ) {
+                        name = sprintf("%s, %s", name, records[r]["name"])
+                    } else {
+                        name = records[r]["name"]
+                    }
+                }
+
+                # Append snapshot date
+                if ( records[r]["lastused"] != 0 ) {
+                    date = strftime("%x @ %X", records[r]["lastused"])
+                    if ( name != "" ) {
+                        name = sprintf("%s at %s", name, date)
+                    } else {
+                        name = sprintf("at %s", date)
+                    }
+                }
+
+                # Choose kernel and initrd if the snapshot was booted successfully on a specific kernel before
+                split(records[r]["initrds"], initrds, "|")
+                split(records[r]["kernels"], kernels, "|")
+
+                # Take latest by default
+                chosen_kernel_index = 1
+                for ( k in kernels ) {
+                    if ( kernels[k] == records[r]["last_booted_kernel"] ) {
+                        chosen_kernel_index = k
+                    }
+                }
+
+                print records[r]["machineid"],
+                    records[r]["zsys"],
+                    "history",
+                    name,
+                    records[r]["dataset"],
+                    records[r]["device"],
+                    initrds[chosen_kernel_index],
+                    kernels[chosen_kernel_index]
+
+                delete records[r]
+            }
+        }
+    }
+}
+
+
+{
+    # Load bootlist
+    entry[$3][NR]["machineid"] = $3
+    entry[$3][NR]["dataset"] = $1
+    entry[$3][NR]["name"] = $4
+    entry[$3][NR]["device"] = $6
+    entry[$3][NR]["initrds"] = $7
+    entry[$3][NR]["kernels"] = $8
+    entry[$3][NR]["last_booted_kernel"] = $9
+    entry[$3][NR]["zsys"] = $2
+
+    entry[$3][NR]["lastused"] = $5
+    if ( $5 == "-" ) {
+        entry[$3][NR]["lastused"] = 0
+    }
+}
+
+END {
+    # Print records
+    for (machineid in entry) {
+        print "----------------------"
+        mainentry_idx = get_main_entry(entry[machineid])
+        if ( mainentry_idx == "" ) {
+            printf("W: no main entry found for %s\n", machineid)
+            continue
+        }
+
+        print_main_entry(entry[machineid][mainentry_idx])
+        print_advanced_entries(entry[machineid][mainentry_idx])
+        print_history_entries(entry[machineid], entry[machineid][mainentry_idx])
+    }
+}
+'
+}
+
 # Import all available pools on the system
 _=$(get_pools)
 
