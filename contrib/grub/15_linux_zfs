@@ -6,7 +6,6 @@ set -eu
 initial_pools=$(zpool list | awk '{if (NR>1) print $1}')
 MNTDIR=$(mktemp -d ${TMPDIR:-/tmp}/zfsmnt.XXXXXX)
 
-
 RC=0
 on_exit() {
     # Restore initial zpool import state
@@ -569,7 +568,7 @@ case GRUB_LINUX_ZFS_TEST in
         # Create boot menu meta data from the list of boot entries
         menu_metadata="$(generate_grub_menu_metadata "$boot_list")"
         # Create boot menu meta data from the list of boot entries
-        grub_menu=$(generate_grub_menu "${menu_metadata}")
+        grub_menu="$(generate_grub_menu "${menu_metadata}")"
         echo "${grub_menu}"
     ;;
 esac
