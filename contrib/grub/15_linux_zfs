@@ -1,45 +1,7 @@
 #! /bin/sh
-set -e
-
 . "/usr/share/grub/grub-mkconfig_lib"
 
-set -u
-
-# grub-mkconfig helper script.
-
-#
-#  PSEUDOCODE from the spec - Remove once implemented
-#
-# For each pool on the system
-# identify root datasets.
-# For each root dataset
-    # Retrieve /etc/machine-id (/!\ etc can be a children datasets, which is fine as long as it’s in ROOT/)
-    # Retrieve /etc/os-release (Add support to os-prober?)
-    # Retrieve user property org.zsys:last-used from the dataset.
-    # Retrieve snapshots from the datasets.
-# For each machine-id:
-    # If zsys:
-        # sort(datasets by last-used or snapshot timestamp) desc order
-    # else:
-        # datasets = [dataset (first) which has mountpoint != legacy and != none] (not coming from a cloned snapshot) + [snapshots of that dataset, ordered by snapshot name]
-    # print(“os-released” os-probed) of datasets[0]
-        # rpool=dataset_path
-    # print(“os-released” os-probed) of datasets[0]
-        # rpool=dataset_pat
-        # option recovery mode
-    # print(History)
-        # [SUBMENU]
-        # for each dataset in datasets[1..]:
-            # print (revert to %s timestamp) + if os-probed_name != datasets[0] os-probed-name -> print os-probed_name
-            # [SUBMENU]
-            # Revert system
-                # rpool=data_path (including @snapshot)
-            # Revert system (recovery mode)
-                # rpool=data_path (including @snapshot)
-                # option recovery mode
-    # date -d @timestamp -> to convert to current timezone human readable date
-
-# If current system is zfs with zsys: disable 10_linux.
+set -eu
 
 initial_pools=$(zpool list | awk '{if (NR>1) print $1}')
 MNTDIR=$(mktemp -d ${TMPDIR:-/tmp}/zfsmnt.XXXXXX)
