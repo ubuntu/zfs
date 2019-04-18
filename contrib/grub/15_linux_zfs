@@ -1,6 +1,18 @@
 #! /bin/sh
 . "${pkgdatadir}/grub-mkconfig_lib"
 
+#TODO: ubuntu_recovery="@UBUNTU_RECOVERY@"
+# ubuntu_recovery="@UBUNTU_RECOVERY@"
+# vt_handoff="@VT_HANDOFF@"
+# quiet_boot="@QUIET_BOOT@"
+# quick_boot="@QUICK_BOOT@"
+#gfxpayload_dynamic="@GFXPAYLOAD_DYNAMIC@"
+ubuntu_recovery="1"
+vt_handoff="1"
+quiet_boot="1"
+quick_boot="1"
+gfxpayload_dynamic="1"
+
 set -eu
 
 initial_pools=$(zpool list | awk '{if (NR>1) print $1}')
@@ -541,6 +553,261 @@ END {
     }
 }
 '
+}
+
+# Print the configuration part common to all sections
+# Note:
+#   If 10_linux runs these part will be defined twice in grub configuration
+print_menu_prologue() {
+    cat << 'EOF'
+function gfxmode {
+	set gfxpayload="${1}"
+EOF
+    if [ "$vt_handoff" = 1 ]; then
+        cat << 'EOF'
+	if [ "${1}" = "keep" ]; then
+		set vt_handoff=vt.handoff=1
+	else
+		set vt_handoff=
+	fi
+EOF
+    fi
+    cat << EOF
+}
+EOF
+
+    # Use ELILO's generic "efifb" when it's known to be available.
+    # FIXME: We need an interface to select vesafb in case efifb can't be used.
+    GRUB_GFXPAYLOAD_LINUX=${GRUB_GFXPAYLOAD_LINUX:-}
+    if [ "x$GRUB_GFXPAYLOAD_LINUX" != x ] || [ "$gfxpayload_dynamic" = 0 ]; then
+        echo "set linux_gfx_mode=$GRUB_GFXPAYLOAD_LINUX"
+    else
+        cat << EOF
+if [ "\${recordfail}" != 1 ]; then
+  if [ -e \${prefix}/gfxblacklist.txt ]; then
+    if hwmatch \${prefix}/gfxblacklist.txt 3; then
+      if [ \${match} = 0 ]; then
+        set linux_gfx_mode=keep
+      else
+        set linux_gfx_mode=text
+      fi
+    else
+      set linux_gfx_mode=text
+    fi
+  else
+    set linux_gfx_mode=keep
+  fi
+else
+  set linux_gfx_mode=text
+fi
+EOF
+    fi
+    cat << EOF
+export linux_gfx_mode
+EOF
+}
+
+# Print a grub menu entry
+zfs_linux_entry () {
+    submenu_level="$1"
+    title="$2"
+    type="$3"
+    dataset="$4"
+    boot_device="$5"
+    initrd="$6"
+    kernel="$7"
+    kernel_additional_args="${8:-}"
+
+    kernel_version=$(basename ${kernel} | sed -e "s,^[^0-9]*-,,g")
+    submenu_indentation="$(printf %${submenu_level}s|tr " " "${grub_tab}")"
+
+    echo "menuentry '$(echo "$title" | grub_quote)' ${CLASS} \$menuentry_id_option 'gnulinux-${dataset}-${kernel_version}' {" | sed "s/^/$submenu_indentation/"
+
+    if [ "$quick_boot" = 1 ]; then
+        echo "	recordfail" | sed "s/^/$submenu_indentation/"
+    fi
+
+    # Use ELILO's generic "efifb" when it's known to be available.
+    # FIXME: We need an interface to select vesafb in case efifb can't be used.
+    if [ "x$GRUB_GFXPAYLOAD_LINUX" = x ]; then
+        echo "	load_video" | sed "s/^/$submenu_indentation/"
+    else
+        if [ "x$GRUB_GFXPAYLOAD_LINUX" != xtext ]; then
+        echo "	load_video" | sed "s/^/$submenu_indentation/"
+        fi
+    fi
+
+    if ([ "$ubuntu_recovery" = 0 ] || [ "${type}" != "recovery" ]) && \
+        ([ "x$GRUB_GFXPAYLOAD_LINUX" != x ] || [ "$gfxpayload_dynamic" = 1 ]); then
+        echo "	gfxmode \$linux_gfx_mode" | sed "s/^/$submenu_indentation/"
+    fi
+
+    echo "	insmod gzio" | sed "s/^/$submenu_indentation/"
+    echo "	if [ x\$grub_platform = xxen ]; then insmod xzio; insmod lzopio; fi" | sed "s/^/$submenu_indentation/"
+
+    set +u
+    echo "$(prepare_grub_to_access_device ${boot_device} | grub_add_tab | sed "s/^/$submenu_indentation/")"
+    set -u
+
+
+    if [ x"${quiet_boot}" = x0 ] || [ x"$type" != xsimple ]; then
+        message="$(gettext_printf "Loading Linux %s ..." ${kernel_version})"
+        sed "s/^/$submenu_indentation/" << EOF
+	echo '$(echo "$message" | grub_quote)'
+EOF
+    fi
+
+    linux_default_args="${GRUB_CMDLINE_LINUX} ${GRUB_CMDLINE_LINUX_DEFAULT}"
+    if [ ${type} = "recovery" ]; then
+        linux_default_args="${GRUB_CMDLINE_LINUX_RECOVERY} ${GRUB_CMDLINE_LINUX}"
+    fi
+
+    sed "s/^/$submenu_indentation/" << EOF
+	linux	${kernel} root=ZFS=${dataset} ro ${linux_default_args} ${kernel_additional_args}
+EOF
+
+    if [ x"${quiet_boot}" = x0 ] || [ x"$type" != xsimple ]; then
+        message="$(gettext_printf "Loading initial ramdisk ...")"
+        sed "s/^/$submenu_indentation/" << EOF
+	echo	'$(echo "$message" | grub_quote)'
+EOF
+    fi
+    sed "s/^/$submenu_indentation/" << EOF
+	initrd	${initrd}
+EOF
+
+    echo "}" | sed "s/^/$submenu_indentation/"
+}
+
+# Generate a GRUB Menu from menu meta data
+# $1 menu metadata
+generate_grub_menu() {
+    local menu_metadata="$1"
+    local last_section=""
+    local main_dataset_name=""
+    local main_dataset=""
+
+    CLASS="--class gnu-linux --class gnu --class os"
+
+    if [ "x${GRUB_DISTRIBUTOR}" = "x" ] ; then
+        OS=GNU/Linux
+    else
+        case ${GRUB_DISTRIBUTOR} in
+            Ubuntu|Kubuntu)
+            OS="${GRUB_DISTRIBUTOR}"
+            ;;
+            *)
+            OS="${GRUB_DISTRIBUTOR} GNU/Linux"
+            ;;
+        esac
+        CLASS="--class $(echo ${GRUB_DISTRIBUTOR} | tr 'A-Z' 'a-z' | cut -d' ' -f1|LC_ALL=C sed 's,[^[:alnum:]_],_,g') ${CLASS}"
+    fi
+
+    if [ -x /lib/recovery-mode/recovery-menu ]; then
+        GRUB_CMDLINE_LINUX_RECOVERY=recovery
+    else
+        GRUB_CMDLINE_LINUX_RECOVERY=single
+    fi
+    if [ "$ubuntu_recovery" = 1 ]; then
+        GRUB_CMDLINE_LINUX_RECOVERY="$GRUB_CMDLINE_LINUX_RECOVERY nomodeset"
+    fi
+
+    if [ "$vt_handoff" = 1 ]; then
+        for word in $GRUB_CMDLINE_LINUX_DEFAULT; do
+            if [ "$word" = splash ]; then
+                GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT \$vt_handoff"
+            fi
+        done
+    fi
+
+    print_menu_prologue
+
+    # Beware: IFS is set to TAB (ASCII 0x09)
+    echo "${menu_metadata}" | while IFS='	' read -r machineid iszsys section name dataset device initrd kernel opt; do
+
+        if [ "${last_section}" != "${section}" -a -n "${last_section}" ]; then
+            # Close previous section wrapper
+            if [ "${last_section}" != "main" ]; then
+                echo "}"    # Add grub_tabs
+            fi
+        fi
+
+        case "${section}" in
+            main)
+                title="${name}"
+                main_dataset_name="${name}"
+                main_dataset="${dataset}"
+
+                zfs_linux_entry 0 "${title}" "simple" "${dataset}" "${device}" "${initrd}" "${kernel}"
+            ;;
+            advanced)
+                # normal and recovery entries for a given kernel
+                if [ "${last_section}" != "${section}" ]; then
+                    echo "submenu '$(gettext_printf "Advanced options for %s" "${main_dataset_name}" | grub_quote)' \$menuentry_id_option 'gnulinux-advanced-${main_dataset}' {"
+                fi
+
+                title="$(gettext_printf "%s, with Linux %s" "${name}" "${kernel_version}")"
+                zfs_linux_entry 1 "${title}" "advanced" "${dataset}" "${device}" "${initrd}" "${kernel}"
+
+                GRUB_DISABLE_RECOVERY=${GRUB_DISABLE_RECOVERY:-}
+                if [ "x${GRUB_DISABLE_RECOVERY}" != "xtrue" ]; then
+                    title="$(gettext_printf "%s, with Linux %s (%s)" "${name}" "${kernel_version}" "$(gettext "${GRUB_RECOVERY_TITLE}")")"
+                    zfs_linux_entry 1 "${title}" "recovery" "${dataset}" "${device}" "${initrd}" "${kernel}"
+                fi
+            ;;
+            history)
+                # Revert to a snapshot
+                # revert system, revert system and user data and associated recovery entries
+                if [ "${last_section}" != "${section}" ]; then
+                    echo "submenu '$(gettext_printf "History for %s" "${main_dataset_name}" | grub_quote)' \$menuentry_id_option 'gnulinux-history-${main_dataset}' {"
+                fi
+
+                if [ "${iszsys}" = "yes" ]; then
+                    title="$(gettext_printf "Revert %s to %s" "${main_dataset_name}" "${name}" | grub_quote)"
+                else
+                    title="$(gettext_printf "Boot %s on %s" "${main_dataset_name}" "${name}" | grub_quote)"
+                fi
+                echo "	submenu '${title}' \$menuentry_id_option 'gnulinux-history-${dataset}' {"
+
+                # Zsys only: let revert system without destroying snapshots
+                if [ "${iszsys}" = "yes" ]; then
+                    title="$(gettext_printf "Revert system only")"
+                    zfs_linux_entry 2 "${title}" "simple" "${dataset}" "${device}" "${initrd}" "${kernel}"
+                    title="$(gettext_printf "Revert system and user data")"
+                    zfs_linux_entry 2 "${title}" "simple" "${dataset}" "${device}" "${initrd}" "${kernel}" "zsys-revert=userdata"
+
+                    GRUB_DISABLE_RECOVERY=${GRUB_DISABLE_RECOVERY:-}
+                    if [ "x${GRUB_DISABLE_RECOVERY}" != "xtrue" ]; then
+                        title="$(gettext_printf "Revert system only (%s)" "$(gettext "${GRUB_RECOVERY_TITLE}")")"
+                        zfs_linux_entry 2 "${title}" "recovery" "${dataset}" "${device}" "${initrd}" "${kernel}"
+                        title="$(gettext_printf "Revert system and user data (%s)" "$(gettext "${GRUB_RECOVERY_TITLE}")")"
+                        zfs_linux_entry 2 "${title}" "recovery" "${dataset}" "${device}" "${initrd}" "${kernel}" "zsys-revert=userdata"
+                    fi
+                # Non-zsys: boot temporarly on snapshots or rollback (destroying intermediate snapshots)
+                else
+                    title="$(gettext_printf "One time boot")"
+                    zfs_linux_entry 2 "${title}" "simple" "${dataset}" "${device}" "${initrd}" "${kernel}"
+
+                    GRUB_DISABLE_RECOVERY=${GRUB_DISABLE_RECOVERY:-}
+                    if [ "x${GRUB_DISABLE_RECOVERY}" != "xtrue" ]; then
+                        title="$(gettext_printf "One time boot (%s)" "$(gettext "${GRUB_RECOVERY_TITLE}")")"
+                        zfs_linux_entry 2 "${title}" "recovery" "${dataset}" "${device}" "${initrd}" "${kernel}"
+                    fi
+
+                    title="$(gettext_printf "Revert system (all intermediate snapshots will be destroyed)")"
+                    zfs_linux_entry 2 "${title}" "simple" "${dataset}" "${device}" "${initrd}" "${kernel}" "rollback=yes"
+                fi
+
+                echo "	}"
+            ;;
+            *)
+                grub_warn "unknown section: ${section}. Ignoring entry ${name} for ${machine_id}"
+            ;;
+        esac
+        last_section="${section}"
+    done
+
+    echo "}"
 }
 
 # Import all available pools on the system
