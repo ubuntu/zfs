@@ -1,5 +1,5 @@
 #! /bin/sh
-. "/usr/share/grub/grub-mkconfig_lib"
+. "${pkgdatadir}/grub-mkconfig_lib"
 
 set -eu
 
@@ -32,8 +32,6 @@ get_pools() {
 
 # List all the dataset with a root mountpoint
 get_root_datasets() {
-    #zpool/ROOT/
-    #/!\ -> /etc
     zfs list -H -oname,canmount,mountpoint -t filesystem | awk '/\t(on|noauto)\t\/$/ {print $1}'
 }
 
@@ -355,8 +353,8 @@ BEGIN {
     OFS = "\t"
 }
 
-
 # Return main entry index
+# param records: boot list records for a machine id
 function get_main_entry(records) {
     idx = ""
     for (i in records) {
@@ -424,6 +422,8 @@ function print_advanced_entries(m) {
 }
 
 # Print history for a given machine_id
+# param records: List of records for a given machine id
+# param m: Main entry for this machine id
 function print_history_entries(records, m) {
 
     main_dataset_name = m["name"]  # Save it because the record is deleted afterwards
@@ -458,7 +458,7 @@ function print_history_entries(records, m) {
                 }
 
                 # We keep the snapname only if it is not only a zsys auto snapshot
-                if ( match(snapname, "^zsys_") != 0 ) {
+                if ( match(snapname, "^autozsys_") != 0 ) {
                     name = "zsyssnapshot"
                 } else {
                     name = snapname
@@ -510,7 +510,6 @@ function print_history_entries(records, m) {
     }
 }
 
-
 {
     # Load bootlist
     entry[$3][NR]["machineid"] = $3
@@ -531,10 +530,9 @@ function print_history_entries(records, m) {
 END {
     # Print records
     for (machineid in entry) {
-        print "----------------------"
         mainentry_idx = get_main_entry(entry[machineid])
         if ( mainentry_idx == "" ) {
-            printf("W: no main entry found for %s\n", machineid)
+            printf("W: no main entry found for %s\n", machineid) > "/dev/stderr"
             continue
         }
 
