@@ -384,10 +384,29 @@ bootlist() {
 # Import all available pools on the system
 _=$(get_pools)
 
-BOOTLIST=$(bootlist ${MNTDIR})
-
-GRUB_LINUX_ZFS_EXPORT_BOOTLIST=${GRUB_LINUX_ZFS_EXPORT_BOOTLIST:-}
-if [ -n "${GRUB_LINUX_ZFS_EXPORT_BOOTLIST}" ]; then
-    echo "${BOOTLIST}" > ${GRUB_LINUX_ZFS_EXPORT_BOOTLIST}
-    return
-fi
+GRUB_LINUX_ZFS_TEST=${GRUB_LINUX_ZFS_TEST:-}
+case GRUB_LINUX_ZFS_TEST in
+    bootlist)
+        boot_list="$(bootlist ${MNTDIR})"
+        echo "${boot_list}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+    ;;
+    metamenu)
+        boot_list="$(cat ${GRUB_LINUX_ZFS_TEST_INPUT})"
+        menu_metadata="$(generate_grub_menu_metadata "${boot_list}")"
+        echo "${menu_metadata}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+    ;;
+    grubmenu)
+        menu_metadata="$(cat ${GRUB_LINUX_ZFS_TEST_INPUT})"
+        grub_menu=$(generate_grub_menu "${menu_metadata}")
+        echo "${grub_menu}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+    ;;
+    *)
+        # Generate the complete list of boot entries
+        boot_list="$(bootlist ${MNTDIR})"
+        # Create boot menu meta data from the list of boot entries
+        menu_metadata="$(generate_grub_menu_metadata "$boot_list")"
+        # Create boot menu meta data from the list of boot entries
+        grub_menu=$(generate_grub_menu "${menu_metadata}")
+        echo "${grub_menu}"
+    ;;
+esac
