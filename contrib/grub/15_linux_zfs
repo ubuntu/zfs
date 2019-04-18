@@ -354,8 +354,10 @@ get_dataset_info() {
         last_used=$(zfs get -H org.zsys:last-used "${dataset}" | awk '{print $3}')
     fi
 
+    is_zsys=$(zfs get -H org.zsys:bootfs "${base_dataset}" | awk '{print $3}')
+
     if [ -n "${initrd_list}" -a -n "${kernel_list}" ]; then
-        echo "${dataset}\t${machine_id}\t${pretty_name}\t${last_used}\t${initrd_device}\t${initrd_list}\t${kernel_list}\t${last_booted_kernel}"
+        echo "${dataset}\t${is_zsys}\t${machine_id}\t${pretty_name}\t${last_used}\t${initrd_device}\t${initrd_list}\t${kernel_list}\t${last_booted_kernel}"
     else
         grub_warn "didn't find any valid initrd or kernel."
     fi
