@@ -346,7 +346,7 @@ bootlist() {
 # the final grub menu entries
 generate_grub_menu_metadata() {
 
-echo "$1" | awk '
+    echo "$1" | awk '
 BEGIN {
     FS = "\t"
     OFS = "\t"
@@ -476,9 +476,9 @@ function print_history_entries(records, m) {
                 if ( records[r]["lastused"] != 0 ) {
                     date = strftime("%x @ %X", records[r]["lastused"])
                     if ( name != "" ) {
-                        name = sprintf("%s at %s", name, date)
+                        name = sprintf("%s on %s", name, date)
                     } else {
-                        name = sprintf("at %s", date)
+                        name = sprintf("on %s", date)
                     }
                 }
 
