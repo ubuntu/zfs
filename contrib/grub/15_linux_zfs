@@ -17,6 +17,7 @@ set -eu
 
 initial_pools=$(zpool list | awk '{if (NR>1) print $1}')
 MNTDIR=$(mktemp -d ${TMPDIR:-/tmp}/zfsmnt.XXXXXX)
+ZFSTMP=$(mktemp -d ${TMPDIR:-/tmp}/zfstmp.XXXXXX)
 
 RC=0
 on_exit() {
@@ -29,6 +30,7 @@ on_exit() {
 
     mountpoint -q "${MNTDIR}"  && umount "${MNTDIR}" || true
     rmdir "${MNTDIR}"
+    rm -rf "${ZFSTMP}"
     exit "${RC}"
 }
 trap on_exit EXIT INT QUIT ABRT PIPE TERM
@@ -607,6 +609,24 @@ export linux_gfx_mode
 EOF
 }
 
+# Cache for prepare_grub_to_access_device call
+# $1: boot_device
+prepare_grub_to_access_device_cached() {
+    local boot_device="$1"
+
+    local boot_device_idx=$(echo $boot_device|tr '/' '_')
+
+    cache_file="$ZFSTMP/$(echo boot_device${boot_device_idx})"
+    if [ ! -f "$cache_file" ]; then
+        set +u
+        echo "$(prepare_grub_to_access_device ${boot_device})" > ${cache_file}
+        set -u
+    fi
+
+    cat "${cache_file}"
+}
+
+
 # Print a grub menu entry
 zfs_linux_entry () {
     submenu_level="$1"
@@ -645,10 +665,7 @@ zfs_linux_entry () {
     echo "	insmod gzio" | sed "s/^/$submenu_indentation/"
     echo "	if [ x\$grub_platform = xxen ]; then insmod xzio; insmod lzopio; fi" | sed "s/^/$submenu_indentation/"
 
-    set +u
-    echo "$(prepare_grub_to_access_device ${boot_device} | grub_add_tab | sed "s/^/$submenu_indentation/")"
-    set -u
-
+    echo "$(prepare_grub_to_access_device_cached ${boot_device} | grub_add_tab | sed "s/^/$submenu_indentation/")"
 
     if [ x"${quiet_boot}" = x0 ] || [ x"$type" != xsimple ]; then
         message="$(gettext_printf "Loading Linux %s ..." ${kernel_version})"
