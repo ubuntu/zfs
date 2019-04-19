@@ -618,7 +618,7 @@ setup_snapshot_booting()
 	use_zsys=$(get_fs_value "${rootfs}" org.zsys:bootfs)
 	if [ "$use_zsys" = "yes" ]; then
 		zsys_uid=`uid`
-		ZFS_BOOTFS="${rootfs}_${zsys_uid}"
+		ZFS_BOOTFS="${rootfs%_*}_${zsys_uid}" # we strip old uid and add new one
 	fi
 
 	# Rollback won't have effect on zsys system
