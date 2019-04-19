@@ -1025,5 +1025,5 @@ mountroot()
 
 uid()
 {
-	dd if=/dev/urandom of=/dev/stdout count=500 2>/dev/null | tr -dc 'a-f0-9' | cut -c-8
+	dd if=/dev/urandom of=/dev/stdout bs=1 count=100 2>/dev/null | tr -dc 'a-z0-9' | cut -c-6
 }
