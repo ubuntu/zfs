@@ -746,12 +746,19 @@ generate_grub_menu() {
                     echo "submenu '$(gettext_printf "Advanced options for %s" "${main_dataset_name}" | grub_quote)' \$menuentry_id_option 'gnulinux-advanced-${main_dataset}' {"
                 fi
 
-                title="$(gettext_printf "%s, with Linux %s" "${name}" "${kernel_version}")"
+                last_booted_kernel="${opt}"
+                last_booted_kernel_marker=""
+                if [ ${kernel} = ${last_booted_kernel} ]; then
+                    last_booted_kernel_marker="(*)"
+                fi
+
+                kernel_version=$(basename ${kernel} | sed -e "s,^[^0-9]*-,,g")
+                title="$(gettext_printf "%s, with Linux %s %s" "${name}" "${kernel_version}" "${last_booted_kernel_marker}")"
                 zfs_linux_entry 1 "${title}" "advanced" "${dataset}" "${device}" "${initrd}" "${kernel}"
 
                 GRUB_DISABLE_RECOVERY=${GRUB_DISABLE_RECOVERY:-}
                 if [ "x${GRUB_DISABLE_RECOVERY}" != "xtrue" ]; then
-                    title="$(gettext_printf "%s, with Linux %s (%s)" "${name}" "${kernel_version}" "$(gettext "${GRUB_RECOVERY_TITLE}")")"
+                    title="$(gettext_printf "%s, with Linux %s (%s) %s" "${name}" "${kernel_version}" "$(gettext "${GRUB_RECOVERY_TITLE}")" "${last_booted_kernel_marker}")"
                     zfs_linux_entry 1 "${title}" "recovery" "${dataset}" "${device}" "${initrd}" "${kernel}"
                 fi
             ;;
