@@ -482,26 +482,13 @@ clone_snap()
 	local snap="$1"
 	local destfs="$2"
 	local mountpoint="$3"
-	local use_real_mountpoint="$4"
+	local additional_parameters="$4"
 
 	[ "$quiet" != "y" ] && zfs_log_begin_msg "Cloning '$snap' to '$destfs'"
 
 	# Clone the snapshot into a dataset we can boot from
-	# We still may need to use the real mountpoint (but we'll mount it)
-	# Manually and let zsys daemon set other as canmount=noauto.
-	#
-	# Otherwise:
-	# + We don't want this filesystem to be automatically mounted, we
-	#   want control over this here and nowhere else.
-	# + We don't need any mountpoint set for the same reason.
-	# + We use the 'org.zol:mountpoint' property to remember the mountpoint.
 	ZFS_CMD="${ZFS} clone"
-	if [ "$use_real_mountpoint" = "yes" ]; then
-		ZFS_CMD="${ZFS_CMD} -o mountpoint=${mountpoint}"
-	else
-		ZFS_CMD="${ZFS_CMD} -o canmount=noauto -o mountpoint=none"
-		ZFS_CMD="${ZFS_CMD} -o org.zol:mountpoint=${mountpoint}"
-	fi
+	ZFS_CMD="${ZFS_CMD} -o canmount=noauto -o mountpoint=${mountpoint} ${additional_parameters}"
 	ZFS_CMD="${ZFS_CMD} $snap $destfs"
 	ZFS_STDERR="$(${ZFS_CMD} 2>&1)"
 	ZFS_ERROR="$?"
@@ -679,9 +666,32 @@ setup_snapshot_booting()
 				fi
 			fi
 
+			# On non zsys:
+			# + We don't want this filesystem to be automatically mounted, we
+			#   want control over this here and nowhere else.
+			# + We don't need any mountpoint set for the same reason.
+			# + We use the 'org.zol:mountpoint' property to remember the mountpoint.
+			# On zsys:
+			# + We don't want this filesystem to be automatically mounted, when cloned
+			#   so, we set canmount=noauto. Zsys early boot will set the current datasets
+			#   to on, alongside other system datasets switch. This enables
+			#   zpool import -a -R /altroot to mount the whole system.
+			#   The initrd script is doing zpool import -N, so we are not impacted by setting
+			#   canmount=on on secondary boot.
+			# + We thus need the real mountpoint set for this reason (as we can't set it
+			#   once the system booted, even if the mountpoint didn't change)
+			# + We set additional parameters to zsys to mark datasets we want mount manually
+			#   at boot.
+			if [ "${use_zsys}" != "yes" ]; then
+				clone_additional_parameters="-o org.zol:mountpoint=${mountpoint}"
+				mountpoint=none
+			else
+				clone_additional_parameters="-o org.zsys:bootfs=$(get_fs_value "${s%%@*}" org.zsys:bootfs)"
+			fi
+
 			# Clone the snapshot into its own
 			# filesystem
-			clone_snap "$s" "${destfs}" "${mountpoint}" "${use_zsys}" || \
+			clone_snap "$s" "${destfs}" "${mountpoint}" "${clone_additional_parameters}" || \
 			    retval=$((retval + 1))
 		fi
 	done
