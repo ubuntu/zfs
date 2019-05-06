@@ -663,7 +663,7 @@ zfs_linux_entry () {
     fi
 
     echo "	insmod gzio" | sed "s/^/${submenu_indentation}/"
-    echo "	if [ \${grub_platform} = xen ]; then insmod xzio; insmod lzopio; fi" | sed "s/^/${submenu_indentation}/"
+    echo "	if [ \"\${grub_platform}\" = xen ]; then insmod xzio; insmod lzopio; fi" | sed "s/^/${submenu_indentation}/"
 
     echo "$(prepare_grub_to_access_device_cached ${boot_device} | grub_add_tab | sed "s/^/${submenu_indentation}/")"
 
