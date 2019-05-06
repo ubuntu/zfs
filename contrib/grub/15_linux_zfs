@@ -825,7 +825,7 @@ generate_grub_menu() {
                 echo "	}"
             ;;
             *)
-                grub_warn "unknown section: ${section}. Ignoring entry ${name} for ${machine_id}"
+                grub_warn "unknown section: ${section}. Ignoring entry ${name} for ${dataset}"
             ;;
         esac
         last_section="${section}"
@@ -838,20 +838,23 @@ generate_grub_menu() {
 _=$(get_pools)
 
 GRUB_LINUX_ZFS_TEST="${GRUB_LINUX_ZFS_TEST:-}"
-case GRUB_LINUX_ZFS_TEST in
+case "${GRUB_LINUX_ZFS_TEST}" in
     bootlist)
         boot_list="$(bootlist ${MNTDIR})"
         echo "${boot_list}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+        break
     ;;
     metamenu)
         boot_list="$(cat ${GRUB_LINUX_ZFS_TEST_INPUT})"
         menu_metadata="$(generate_grub_menu_metadata ${boot_list})"
         echo "${menu_metadata}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+        break
     ;;
     grubmenu)
         menu_metadata="$(cat ${GRUB_LINUX_ZFS_TEST_INPUT})"
         grub_menu=$(generate_grub_menu "${menu_metadata}")
         echo "${grub_menu}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+        break
     ;;
     *)
         # Generate the complete list of boot entries
