@@ -1,11 +1,11 @@
 #! /bin/sh
 . "${pkgdatadir}/grub-mkconfig_lib"
 
-#TODO: ubuntu_recovery="@UBUNTU_RECOVERY@"
-# ubuntu_recovery="@UBUNTU_RECOVERY@"
-# vt_handoff="@VT_HANDOFF@"
-# quiet_boot="@QUIET_BOOT@"
-# quick_boot="@QUICK_BOOT@"
+#TODO:
+#ubuntu_recovery="@UBUNTU_RECOVERY@"
+#vt_handoff="@VT_HANDOFF@"
+#quiet_boot="@QUIET_BOOT@"
+#quick_boot="@QUICK_BOOT@"
 #gfxpayload_dynamic="@GFXPAYLOAD_DYNAMIC@"
 ubuntu_recovery="1"
 vt_handoff="1"
@@ -15,9 +15,9 @@ gfxpayload_dynamic="1"
 
 set -eu
 
-initial_pools=$(zpool list | awk '{if (NR>1) print $1}')
-MNTDIR=$(mktemp -d ${TMPDIR:-/tmp}/zfsmnt.XXXXXX)
-ZFSTMP=$(mktemp -d ${TMPDIR:-/tmp}/zfstmp.XXXXXX)
+initial_pools="$(zpool list | awk '{if (NR>1) print $1}')"
+MNTDIR="$(mktemp -d ${TMPDIR:-/tmp}/zfsmnt.XXXXXX)"
+ZFSTMP="$(mktemp -d ${TMPDIR:-/tmp}/zfstmp.XXXXXX)"
 
 RC=0
 on_exit() {
@@ -39,7 +39,7 @@ trap on_exit EXIT INT QUIT ABRT PIPE TERM
 get_pools() {
     # We have to ignore zpool import output, as potentially multiple / will be available,
     # and we need to autodetect all zpools this way with their real mountpoints.
-    zpool import -a -N -d $HOME 2>/dev/null || true  # TODO: remove -d $HOME
+    zpool import -a -N 2>/dev/null
     zpool list | awk '{if (NR>1) print $1}'
 }
 
@@ -129,9 +129,9 @@ get_system_directory() {
     local base_dataset_path="${dataset_path}"
     local snapshot_name=""
     # For snapshots we extract the parent dataset
-    if echo ${dataset_path} | grep -q '@'; then
-        base_dataset_path=$(echo ${dataset_path}|cut -d '@' -f1)
-        snapshot_name=$(echo ${dataset_path}|cut -d '@' -f2)
+    if echo "${dataset_path}" | grep -q '@'; then
+        base_dataset_path=$(echo "${dataset_path}" | cut -d '@' -f1)
+        snapshot_name=$(echo "${dataset_path}" | cut -d '@' -f2)
     fi
     base_dataset_name="${base_dataset_path##*/}"
     base_pool="$(echo "${base_dataset_path}" | cut -d'/' -f1)"
@@ -159,7 +159,7 @@ get_system_directory() {
     # - canmount!=off
     all_basename_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\/'"${base_dataset_name}"'\s+(on|noauto)\s+\/'"${directory}"'/ {print $1}')"
     # Start with current pool
-    for dataset in $(echo "${all_basename_datasets}" | grep -E "^$base_pool"); do
+    for dataset in $(echo "${all_basename_datasets}" | grep -E "^${base_pool}"); do
         candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot_name}")
         if [ -n "${candidate_path}" ]; then
             echo "${candidate_path}"
@@ -169,7 +169,7 @@ get_system_directory() {
 
     # Now check other pools
     if [ "${restrict_to_same_pool}" != "true" ]; then
-        for dataset in $(echo "${all_basename_datasets}" | grep -vE "^$base_pool"); do
+        for dataset in $(echo "${all_basename_datasets}" | grep -vE "^${base_pool}"); do
             candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot_name}")
             if [ -n "${candidate_path}" ]; then
                 echo "${candidate_path}"
@@ -181,7 +181,7 @@ get_system_directory() {
     # 2.d) If we didn't find anything yet: check for persistent directories corresponding to our mountpoint, with canmount=on without any snapshot associated:
     all_persistent_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\s+on\s+\/'"${directory}"'/ {print $1}')"
     # Start with current pool
-    for dataset in $(echo "${all_persistent_datasets}" | grep -E "^$base_pool"); do
+    for dataset in $(echo "${all_persistent_datasets}" | grep -E "^${base_pool}"); do
         candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "")
         if [ -n "${candidate_path}" ]; then
             echo "${candidate_path}"
@@ -189,7 +189,7 @@ get_system_directory() {
         fi
     done
     # Now check other pools
-    for dataset in $(echo "${all_persistent_datasets}" | grep -vE "^$base_pool"); do
+    for dataset in $(echo "${all_persistent_datasets}" | grep -vE "^${base_pool}"); do
         candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "")
         if [ -n "${candidate_path}" ]; then
             echo "${candidate_path}"
@@ -213,8 +213,8 @@ get_dataset_info() {
     local etc_dir="${mntdir}/etc"
     local is_snapshot="false"
     # For snapshot we extract the parent dataset
-    if echo ${dataset}|grep -q '@'; then
-        base_dataset=$(echo ${dataset}|cut -d '@' -f1)
+    if echo "${dataset}" | grep -q '@'; then
+        base_dataset=$(echo "${dataset}" | cut -d '@' -f1)
         is_snapshot="true"
     fi
 
@@ -224,42 +224,42 @@ get_dataset_info() {
     etc_dir=$(get_system_directory "${dataset}" "etc" "true" "${mntdir}" "")
     if [ -z  "${etc_dir}" ]; then
         grub_warn "Ignoring ${dataset}"
-        mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
+        mountpoint -q "${mntdir}/etc" && umount "${mntdir}/etc" || true
         umount "${mntdir}"
         return
     fi
 
-    machine_id=`cat "${etc_dir}"/machine-id`
-    pretty_name=`( . "${etc_dir}"/os-release && echo $PRETTY_NAME )`
-    mountpoint -q ${mntdir}/etc && umount "${mntdir}/etc" || true
+    machine_id=$(cat "${etc_dir}/machine-id")
+    pretty_name=$(. "${etc_dir}/os-release" && echo "${PRETTY_NAME}")
+    mountpoint -q "${mntdir}/etc" && umount "${mntdir}/etc" || true
 
     # read available kernels from /boot
     boot_dir=$(get_system_directory "${dataset}" "boot" "false" "${mntdir}" "${etc_dir}")
     if [ -z  "${boot_dir}" ]; then
         grub_warn "Ignoring ${dataset}"
-        mountpoint -q ${mntdir}/boot && umount "${mntdir}/boot" || true
+        mountpoint -q "${mntdir}/boot" && umount "${mntdir}/boot" || true
         umount "${mntdir}"
         return
     fi
 
-    machine=`uname -m`
-    case "$machine" in
+    machine="$(uname -m)"
+    case "${machine}" in
         i?86) GENKERNEL_ARCH="x86" ;;
         mips|mips64) GENKERNEL_ARCH="mips" ;;
         mipsel|mips64el) GENKERNEL_ARCH="mipsel" ;;
         arm*) GENKERNEL_ARCH="arm" ;;
-        *) GENKERNEL_ARCH="$machine" ;;
+        *) GENKERNEL_ARCH="${machine}" ;;
     esac
 
     initrd_list=""
     kernel_list=""
-    for linux in $(find $boot_dir -maxdepth 1 -type f -regex '.*/\(vmlinuz\|vmlinux\|kernel\)-.*'|sort -V); do
-        if ! grub_file_is_not_garbage "$linux" ; then
+    for linux in $(find "${boot_dir}" -maxdepth 1 -type f -regex '.*/\(vmlinuz\|vmlinux\|kernel\)-.*'|sort -V); do
+        if ! grub_file_is_not_garbage "${linux}" ; then
             continue
         fi
 
         # filters entry if efi/non efi
-        case $linux in
+        case "${linux}" in
             *.efi.signed)
                 if ! test -d /sys/firmware/efi; then
                     continue
@@ -272,14 +272,14 @@ get_dataset_info() {
             ;;
         esac
 
-        linux_basename=`basename $linux`
-        linux_dirname=`dirname $linux`
-        version=`echo $linux_basename | sed -e "s,^[^0-9]*-,,g"`
-        alt_version=`echo $version | sed -e "s,\.old$,,g"`
+        linux_basename=$(basename "${linux}")
+        linux_dirname=$(dirname "${linux}")
+        version=$(echo "${linux_basename}" | sed -e "s,^[^0-9]*-,,g")
+        alt_version=$(echo "${version}" | sed -e "s,\.old$,,g")
 
         gettext_printf "Found linux image: %s in %s\n" "${linux_basename}" "${dataset}" >&2
 
-        initrd=
+        initrd=""
         for i in "initrd.img-${version}" "initrd-${version}.img" "initrd-${version}.gz" \
             "initrd-${version}" "initramfs-${version}.img" \
             "initrd.img-${alt_version}" "initrd-${alt_version}.img" \
@@ -301,18 +301,18 @@ get_dataset_info() {
 
         gettext_printf "Found initrd image: %s in %s\n" "${initrd}" "${dataset}" >&2
 
-        rel_linux_dirname=`make_system_path_relative_to_its_root $linux_dirname`
+        rel_linux_dirname=$(make_system_path_relative_to_its_root "${linux_dirname}")
 
         initrd_list="${rel_linux_dirname}/${initrd}|${initrd_list}"
         kernel_list="${rel_linux_dirname}/${linux_basename}|${kernel_list}"
     done
 
-    initrd_list=${initrd_list%|}
-    kernel_list=${kernel_list%|}
+    initrd_list="${initrd_list%|}"
+    kernel_list="${kernel_list%|}"
 
-    initrd_device=`${grub_probe} --target=device ${boot_dir}`
+    initrd_device=$(${grub_probe} --target=device "${boot_dir}")
 
-    mountpoint -q ${mntdir}/boot && umount "${mntdir}/boot" || true
+    mountpoint -q "${mntdir}/boot" && umount "${mntdir}/boot" || true
 
     # for zsys snapshots: we want to know which kernel we successful last booted with
     last_booted_kernel=$(zfs get -H org.zsys:last-booted-kernel "${dataset}" | awk '{print $3}')
@@ -565,7 +565,7 @@ print_menu_prologue() {
 function gfxmode {
 	set gfxpayload="${1}"
 EOF
-    if [ "$vt_handoff" = 1 ]; then
+    if [ "${vt_handoff}" = 1 ]; then
         cat << 'EOF'
 	if [ "${1}" = "keep" ]; then
 		set vt_handoff=vt.handoff=1
@@ -580,9 +580,9 @@ EOF
 
     # Use ELILO's generic "efifb" when it's known to be available.
     # FIXME: We need an interface to select vesafb in case efifb can't be used.
-    GRUB_GFXPAYLOAD_LINUX=${GRUB_GFXPAYLOAD_LINUX:-}
-    if [ "x$GRUB_GFXPAYLOAD_LINUX" != x ] || [ "$gfxpayload_dynamic" = 0 ]; then
-        echo "set linux_gfx_mode=$GRUB_GFXPAYLOAD_LINUX"
+    GRUB_GFXPAYLOAD_LINUX="${GRUB_GFXPAYLOAD_LINUX:-}"
+    if [ "${GRUB_GFXPAYLOAD_LINUX}" != "" ] || [ "${gfxpayload_dynamic}" = 0 ]; then
+        echo "set linux_gfx_mode=${GRUB_GFXPAYLOAD_LINUX}"
     else
         cat << EOF
 if [ "\${recordfail}" != 1 ]; then
@@ -614,12 +614,12 @@ EOF
 prepare_grub_to_access_device_cached() {
     local boot_device="$1"
 
-    local boot_device_idx=$(echo $boot_device|tr '/' '_')
+    local boot_device_idx=$(echo ${boot_device} | tr '/' '_')
 
-    cache_file="$ZFSTMP/$(echo boot_device${boot_device_idx})"
-    if [ ! -f "$cache_file" ]; then
+    cache_file="${ZFSTMP}/$(echo boot_device${boot_device_idx})"
+    if [ ! -f "${cache_file}" ]; then
         set +u
-        echo "$(prepare_grub_to_access_device ${boot_device})" > ${cache_file}
+        echo "$(prepare_grub_to_access_device ${boot_device})" > "${cache_file}"
         set -u
     fi
 
@@ -638,38 +638,38 @@ zfs_linux_entry () {
     kernel="$7"
     kernel_additional_args="${8:-}"
 
-    kernel_version=$(basename ${kernel} | sed -e "s,^[^0-9]*-,,g")
-    submenu_indentation="$(printf %${submenu_level}s|tr " " "${grub_tab}")"
+    kernel_version=$(basename "${kernel}" | sed -e "s,^[^0-9]*-,,g")
+    submenu_indentation="$(printf %${submenu_level}s | tr " " "${grub_tab}")"
 
-    echo "menuentry '$(echo "$title" | grub_quote)' ${CLASS} \$menuentry_id_option 'gnulinux-${dataset}-${kernel_version}' {" | sed "s/^/$submenu_indentation/"
+    echo "menuentry '$(echo "${title}" | grub_quote)' ${CLASS} \${menuentry_id_option} 'gnulinux-${dataset}-${kernel_version}' {" | sed "s/^/${submenu_indentation}/"
 
-    if [ "$quick_boot" = 1 ]; then
-        echo "	recordfail" | sed "s/^/$submenu_indentation/"
+    if [ "${quick_boot}" = 1 ]; then
+        echo "	recordfail" | sed "s/^/${submenu_indentation}/"
     fi
 
     # Use ELILO's generic "efifb" when it's known to be available.
     # FIXME: We need an interface to select vesafb in case efifb can't be used.
-    if [ "x$GRUB_GFXPAYLOAD_LINUX" = x ]; then
-        echo "	load_video" | sed "s/^/$submenu_indentation/"
+    if [ "${GRUB_GFXPAYLOAD_LINUX}" = "" ]; then
+        echo "	load_video" | sed "s/^/${submenu_indentation}/"
     else
-        if [ "x$GRUB_GFXPAYLOAD_LINUX" != xtext ]; then
-        echo "	load_video" | sed "s/^/$submenu_indentation/"
+        if [ "${GRUB_GFXPAYLOAD_LINUX}" != xtext ]; then
+        echo "	load_video" | sed "s/^/${submenu_indentation}/"
         fi
     fi
 
-    if ([ "$ubuntu_recovery" = 0 ] || [ "${type}" != "recovery" ]) && \
-        ([ "x$GRUB_GFXPAYLOAD_LINUX" != x ] || [ "$gfxpayload_dynamic" = 1 ]); then
-        echo "	gfxmode \$linux_gfx_mode" | sed "s/^/$submenu_indentation/"
+    if ([ "${ubuntu_recovery}" = 0 ] || [ "${type}" != "recovery" ]) && \
+        ([ "${GRUB_GFXPAYLOAD_LINUX}" != "" ] || [ "${gfxpayload_dynamic}" = 1 ]); then
+        echo "	gfxmode \${linux_gfx_mode}" | sed "s/^/${submenu_indentation}/"
     fi
 
-    echo "	insmod gzio" | sed "s/^/$submenu_indentation/"
-    echo "	if [ x\$grub_platform = xxen ]; then insmod xzio; insmod lzopio; fi" | sed "s/^/$submenu_indentation/"
+    echo "	insmod gzio" | sed "s/^/${submenu_indentation}/"
+    echo "	if [ \"\${grub_platform}\" = xen ]; then insmod xzio; insmod lzopio; fi" | sed "s/^/${submenu_indentation}/"
 
-    echo "$(prepare_grub_to_access_device_cached ${boot_device} | grub_add_tab | sed "s/^/$submenu_indentation/")"
+    echo "$(prepare_grub_to_access_device_cached ${boot_device} | grub_add_tab | sed "s/^/${submenu_indentation}/")"
 
-    if [ x"${quiet_boot}" = x0 ] || [ x"$type" != xsimple ]; then
+    if [ "${quiet_boot}" = 0 ] || [ "${type}" != simple ]; then
         message="$(gettext_printf "Loading Linux %s ..." ${kernel_version})"
-        sed "s/^/$submenu_indentation/" << EOF
+        sed "s/^/${submenu_indentation}/" << EOF
 	echo '$(echo "$message" | grub_quote)'
 EOF
     fi
@@ -679,21 +679,21 @@ EOF
         linux_default_args="${GRUB_CMDLINE_LINUX_RECOVERY} ${GRUB_CMDLINE_LINUX}"
     fi
 
-    sed "s/^/$submenu_indentation/" << EOF
+    sed "s/^/${submenu_indentation}/" << EOF
 	linux	${kernel} root=ZFS=${dataset} ro ${linux_default_args} ${kernel_additional_args}
 EOF
 
-    if [ x"${quiet_boot}" = x0 ] || [ x"$type" != xsimple ]; then
+    if [ "${quiet_boot}" = 0 ] || [ "${type}" != simple ]; then
         message="$(gettext_printf "Loading initial ramdisk ...")"
-        sed "s/^/$submenu_indentation/" << EOF
+        sed "s/^/${submenu_indentation}/" << EOF
 	echo	'$(echo "$message" | grub_quote)'
 EOF
     fi
-    sed "s/^/$submenu_indentation/" << EOF
+    sed "s/^/${submenu_indentation}/" << EOF
 	initrd	${initrd}
 EOF
 
-    echo "}" | sed "s/^/$submenu_indentation/"
+    echo "}" | sed "s/^/${submenu_indentation}/"
 }
 
 # Generate a GRUB Menu from menu meta data
@@ -706,7 +706,7 @@ generate_grub_menu() {
 
     CLASS="--class gnu-linux --class gnu --class os"
 
-    if [ "x${GRUB_DISTRIBUTOR}" = "x" ] ; then
+    if [ "${GRUB_DISTRIBUTOR}" = "" ] ; then
         OS=GNU/Linux
     else
         case ${GRUB_DISTRIBUTOR} in
@@ -717,7 +717,7 @@ generate_grub_menu() {
             OS="${GRUB_DISTRIBUTOR} GNU/Linux"
             ;;
         esac
-        CLASS="--class $(echo ${GRUB_DISTRIBUTOR} | tr 'A-Z' 'a-z' | cut -d' ' -f1|LC_ALL=C sed 's,[^[:alnum:]_],_,g') ${CLASS}"
+        CLASS="--class $(echo ${GRUB_DISTRIBUTOR} | tr 'A-Z' 'a-z' | cut -d' ' -f1 | LC_ALL=C sed 's,[^[:alnum:]_],_,g') ${CLASS}"
     fi
 
     if [ -x /lib/recovery-mode/recovery-menu ]; then
@@ -725,14 +725,14 @@ generate_grub_menu() {
     else
         GRUB_CMDLINE_LINUX_RECOVERY=single
     fi
-    if [ "$ubuntu_recovery" = 1 ]; then
-        GRUB_CMDLINE_LINUX_RECOVERY="$GRUB_CMDLINE_LINUX_RECOVERY nomodeset"
+    if [ "${ubuntu_recovery}" = 1 ]; then
+        GRUB_CMDLINE_LINUX_RECOVERY="${GRUB_CMDLINE_LINUX_RECOVERY} nomodeset"
     fi
 
-    if [ "$vt_handoff" = 1 ]; then
-        for word in $GRUB_CMDLINE_LINUX_DEFAULT; do
-            if [ "$word" = splash ]; then
-                GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT \$vt_handoff"
+    if [ "${vt_handoff}" = 1 ]; then
+        for word in ${GRUB_CMDLINE_LINUX_DEFAULT}; do
+            if [ "${word}" = splash ]; then
+                GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} \${vt_handoff}"
             fi
         done
     fi
@@ -760,21 +760,21 @@ generate_grub_menu() {
             advanced)
                 # normal and recovery entries for a given kernel
                 if [ "${last_section}" != "${section}" ]; then
-                    echo "submenu '$(gettext_printf "Advanced options for %s" "${main_dataset_name}" | grub_quote)' \$menuentry_id_option 'gnulinux-advanced-${main_dataset}' {"
+                    echo "submenu '$(gettext_printf "Advanced options for %s" "${main_dataset_name}" | grub_quote)' \${menuentry_id_option} 'gnulinux-advanced-${main_dataset}' {"
                 fi
 
                 last_booted_kernel="${opt}"
                 last_booted_kernel_marker=""
-                if [ ${kernel} = ${last_booted_kernel} ]; then
+                if [ "${kernel}" = "${last_booted_kernel}" ]; then
                     last_booted_kernel_marker="(*)"
                 fi
 
-                kernel_version=$(basename ${kernel} | sed -e "s,^[^0-9]*-,,g")
+                kernel_version=$(basename "${kernel}" | sed -e "s,^[^0-9]*-,,g")
                 title="$(gettext_printf "%s, with Linux %s %s" "${name}" "${kernel_version}" "${last_booted_kernel_marker}")"
                 zfs_linux_entry 1 "${title}" "advanced" "${dataset}" "${device}" "${initrd}" "${kernel}"
 
                 GRUB_DISABLE_RECOVERY=${GRUB_DISABLE_RECOVERY:-}
-                if [ "x${GRUB_DISABLE_RECOVERY}" != "xtrue" ]; then
+                if [ "${GRUB_DISABLE_RECOVERY}" != "true" ]; then
                     title="$(gettext_printf "%s, with Linux %s (%s) %s" "${name}" "${kernel_version}" "$(gettext "${GRUB_RECOVERY_TITLE}")" "${last_booted_kernel_marker}")"
                     zfs_linux_entry 1 "${title}" "recovery" "${dataset}" "${device}" "${initrd}" "${kernel}"
                 fi
@@ -783,7 +783,7 @@ generate_grub_menu() {
                 # Revert to a snapshot
                 # revert system, revert system and user data and associated recovery entries
                 if [ "${last_section}" != "${section}" ]; then
-                    echo "submenu '$(gettext_printf "History for %s" "${main_dataset_name}" | grub_quote)' \$menuentry_id_option 'gnulinux-history-${main_dataset}' {"
+                    echo "submenu '$(gettext_printf "History for %s" "${main_dataset_name}" | grub_quote)' \${menuentry_id_option} 'gnulinux-history-${main_dataset}' {"
                 fi
 
                 if [ "${iszsys}" = "yes" ]; then
@@ -791,7 +791,7 @@ generate_grub_menu() {
                 else
                     title="$(gettext_printf "Boot %s on %s" "${main_dataset_name}" "${name}" | grub_quote)"
                 fi
-                echo "	submenu '${title}' \$menuentry_id_option 'gnulinux-history-${dataset}' {"
+                echo "	submenu '${title}' \${menuentry_id_option} 'gnulinux-history-${dataset}' {"
 
                 # Zsys only: let revert system without destroying snapshots
                 if [ "${iszsys}" = "yes" ]; then
@@ -800,8 +800,8 @@ generate_grub_menu() {
                     title="$(gettext_printf "Revert system and user data")"
                     zfs_linux_entry 2 "${title}" "simple" "${dataset}" "${device}" "${initrd}" "${kernel}" "zsys-revert=userdata"
 
-                    GRUB_DISABLE_RECOVERY=${GRUB_DISABLE_RECOVERY:-}
-                    if [ "x${GRUB_DISABLE_RECOVERY}" != "xtrue" ]; then
+                    GRUB_DISABLE_RECOVERY="${GRUB_DISABLE_RECOVERY:-}"
+                    if [ "${GRUB_DISABLE_RECOVERY}" != "true" ]; then
                         title="$(gettext_printf "Revert system only (%s)" "$(gettext "${GRUB_RECOVERY_TITLE}")")"
                         zfs_linux_entry 2 "${title}" "recovery" "${dataset}" "${device}" "${initrd}" "${kernel}"
                         title="$(gettext_printf "Revert system and user data (%s)" "$(gettext "${GRUB_RECOVERY_TITLE}")")"
@@ -812,8 +812,8 @@ generate_grub_menu() {
                     title="$(gettext_printf "One time boot")"
                     zfs_linux_entry 2 "${title}" "simple" "${dataset}" "${device}" "${initrd}" "${kernel}"
 
-                    GRUB_DISABLE_RECOVERY=${GRUB_DISABLE_RECOVERY:-}
-                    if [ "x${GRUB_DISABLE_RECOVERY}" != "xtrue" ]; then
+                    GRUB_DISABLE_RECOVERY="${GRUB_DISABLE_RECOVERY:-}"
+                    if [ "${GRUB_DISABLE_RECOVERY}" != "true" ]; then
                         title="$(gettext_printf "One time boot (%s)" "$(gettext "${GRUB_RECOVERY_TITLE}")")"
                         zfs_linux_entry 2 "${title}" "recovery" "${dataset}" "${device}" "${initrd}" "${kernel}"
                     fi
@@ -837,7 +837,7 @@ generate_grub_menu() {
 # Import all available pools on the system
 _=$(get_pools)
 
-GRUB_LINUX_ZFS_TEST=${GRUB_LINUX_ZFS_TEST:-}
+GRUB_LINUX_ZFS_TEST="${GRUB_LINUX_ZFS_TEST:-}"
 case GRUB_LINUX_ZFS_TEST in
     bootlist)
         boot_list="$(bootlist ${MNTDIR})"
@@ -845,7 +845,7 @@ case GRUB_LINUX_ZFS_TEST in
     ;;
     metamenu)
         boot_list="$(cat ${GRUB_LINUX_ZFS_TEST_INPUT})"
-        menu_metadata="$(generate_grub_menu_metadata "${boot_list}")"
+        menu_metadata="$(generate_grub_menu_metadata ${boot_list})"
         echo "${menu_metadata}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
     ;;
     grubmenu)
@@ -857,7 +857,7 @@ case GRUB_LINUX_ZFS_TEST in
         # Generate the complete list of boot entries
         boot_list="$(bootlist ${MNTDIR})"
         # Create boot menu meta data from the list of boot entries
-        menu_metadata="$(generate_grub_menu_metadata "$boot_list")"
+        menu_metadata="$(generate_grub_menu_metadata ${boot_list})"
         # Create boot menu meta data from the list of boot entries
         grub_menu="$(generate_grub_menu "${menu_metadata}")"
         echo "${grub_menu}"
