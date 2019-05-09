@@ -846,7 +846,7 @@ case "${GRUB_LINUX_ZFS_TEST}" in
     ;;
     metamenu)
         boot_list="$(cat ${GRUB_LINUX_ZFS_TEST_INPUT})"
-        menu_metadata="$(generate_grub_menu_metadata ${boot_list})"
+        menu_metadata="$(generate_grub_menu_metadata "${boot_list}")"
         echo "${menu_metadata}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
         break
     ;;
@@ -860,7 +860,7 @@ case "${GRUB_LINUX_ZFS_TEST}" in
         # Generate the complete list of boot entries
         boot_list="$(bootlist ${MNTDIR})"
         # Create boot menu meta data from the list of boot entries
-        menu_metadata="$(generate_grub_menu_metadata ${boot_list})"
+        menu_metadata="$(generate_grub_menu_metadata "${boot_list}")"
         # Create boot menu meta data from the list of boot entries
         grub_menu="$(generate_grub_menu "${menu_metadata}")"
         echo "${grub_menu}"
