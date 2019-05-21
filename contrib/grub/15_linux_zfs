@@ -153,21 +153,11 @@ get_system_directory() {
         return
     fi
 
-    # 2.c) Look for every datatsets in every pool (starting with current pool) which holds:
+    # 2.c) Look for every datatsets in every pool which isn't the current one which holds:
     # - the same dataset name than our base_dataset_name
     # - mountpoint=directory
     # - canmount!=off
     all_basename_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\/'"${base_dataset_name}"'\s+(on|noauto)\s+\/'"${directory}"'/ {print $1}')"
-    # Start with current pool
-    for dataset in $(echo "${all_basename_datasets}" | grep -E "^${base_pool}"); do
-        candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot_name}")
-        if [ -n "${candidate_path}" ]; then
-            echo "${candidate_path}"
-            return
-        fi
-    done
-
-    # Now check other pools
     if [ "${restrict_to_same_pool}" != "true" ]; then
         for dataset in $(echo "${all_basename_datasets}" | grep -vE "^${base_pool}"); do
             candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot_name}")
