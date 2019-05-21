@@ -319,7 +319,7 @@ get_dataset_info() {
 
     # snapshot: last_used is dataset creation time
     if [ "${is_snapshot}" = "true" ]; then
-        creation_date="$(LC_TIME=posix TZ=Etc/UTC zfs get -H creation "${dataset}" | awk -F '\t' '{print $3}')"
+        creation_date="$(LC_TIME=POSIX zfs get -H creation "${dataset}" | awk -F '\t' '{print $3}')"
         # Convert to epoch
         last_used=$(date -d "${creation_date}" +%s)
     # otherwise, last_used is manually marked at boot/shutdown on a root dataset by zsys or - for non zsys
