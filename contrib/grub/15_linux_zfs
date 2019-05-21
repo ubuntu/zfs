@@ -158,6 +158,7 @@ get_system_directory() {
     # - mountpoint=directory
     # - canmount!=off
     all_basename_datasets="$(zfs list -t filesystem -oname,canmount,mountpoint | awk  '/^[^ ]+\/'"${base_dataset_name}"'\s+(on|noauto)\s+\/'"${directory}"'/ {print $1}')"
+    # Check other pools as 2 datasets with the same name and different content can't be on same pool
     if [ "${restrict_to_same_pool}" != "true" ]; then
         for dataset in $(echo "${all_basename_datasets}" | grep -vE "^${base_pool}"); do
             candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "${snapshot_name}")
@@ -178,14 +179,17 @@ get_system_directory() {
             return
         fi
     done
+
     # Now check other pools
-    for dataset in $(echo "${all_persistent_datasets}" | grep -vE "^${base_pool}"); do
-        candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "")
-        if [ -n "${candidate_path}" ]; then
-            echo "${candidate_path}"
-            return
-        fi
-    done
+    if [ "${restrict_to_same_pool}" != "true" ]; then
+        for dataset in $(echo "${all_persistent_datasets}" | grep -vE "^${base_pool}"); do
+            candidate_path=$(validate_system_dataset "${dataset}" "${directory}" "${mntdir}" "")
+            if [ -n "${candidate_path}" ]; then
+                echo "${candidate_path}"
+                return
+            fi
+        done
+    fi
 
     grub_warn "Failed to find a valid directory '${directory}' for dataset '${dataset_path}'. Ignoring"
     return
