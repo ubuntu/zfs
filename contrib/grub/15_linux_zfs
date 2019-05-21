@@ -201,6 +201,16 @@ get_system_directory() {
     return
 }
 
+# Return if secure boot is enabled on that system
+is_secure_boot_enabled() {
+    if LANG=C mokutil --sb-state 2>/dev/null | grep -qi enabled; then
+        echo "true"
+        return
+    fi
+    echo "false"
+    return
+}
+
 
 # Given a filesystem or snapshot dataset, returns dataset|machine id|pretty name|last used
 # $1 is dataset we want information from
@@ -261,12 +271,12 @@ get_dataset_info() {
         # filters entry if efi/non efi
         case "${linux}" in
             *.efi.signed)
-                if ! test -d /sys/firmware/efi; then
+                if [ "$(is_secure_boot_enabled)" = "false" ]; then
                     continue
                 fi
             ;;
             *)
-                if test -d /sys/firmware/efi; then
+                if [ "$(is_secure_boot_enabled)" = "true" ]; then
                     continue
                 fi
             ;;
