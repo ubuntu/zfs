@@ -392,16 +392,14 @@ function get_main_entry(records) {
             continue
         }
 
-        # Non zsys or zsys with no "lastused", take first element which is not a snapshot
+        # Take first element which is not a snapshot to initialize
         if ( idx == "" ) {
             idx = i
         }
 
-        # Get most recent entry for zsys systems
-        if ( records[i]["zsys"] == "yes"  ) {
-            if ( records[i]["lastused"] > records[idx]["lastused"] ) {
-                idx = i
-            }
+        # Get most recent entry
+        if ( records[i]["lastused"] > records[idx]["lastused"] ) {
+            idx = i
         }
     }
 
@@ -552,21 +550,28 @@ function print_history_entries(records, m) {
     entry[$3][NR]["kernels"] = $8
     entry[$3][NR]["last_booted_kernel"] = $9
     entry[$3][NR]["zsys"] = $2
-
     entry[$3][NR]["lastused"] = $5
-    if ( $5 == "-" ) {
-        entry[$3][NR]["lastused"] = 0
-    }
+
 }
 
 END {
-    # Print records
+
+    # Order machine ids by last_used from their main entry
     for (machineid in entry) {
         mainentry_idx = get_main_entry(entry[machineid])
         if ( mainentry_idx == "" ) {
             printf("W: no main entry found for %s\n", machineid) > "/dev/stderr"
             continue
         }
+        m[entry[machineid][mainentry_idx]["lastused"] "," machineid] = mainentry_idx
+    }
+    asorti(m, machines, "@ind_str_desc")
+
+    # Print records
+    for (i in machines) {
+        split(machines[i], m_id, ",")
+        machineid = m_id[2]
+        mainentry_idx = m[machines[i]]
 
         print_main_entry(entry[machineid][mainentry_idx])
         print_advanced_entries(entry[machineid][mainentry_idx])
