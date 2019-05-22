@@ -542,15 +542,17 @@ function print_history_entries(records, m) {
 
 {
     # Load bootlist
-    entry[$3][NR]["machineid"] = $3
-    entry[$3][NR]["dataset"] = $1
-    entry[$3][NR]["name"] = $4
-    entry[$3][NR]["device"] = $6
-    entry[$3][NR]["initrds"] = $7
-    entry[$3][NR]["kernels"] = $8
-    entry[$3][NR]["last_booted_kernel"] = $9
-    entry[$3][NR]["zsys"] = $2
-    entry[$3][NR]["lastused"] = $5
+    if ( ! /^$/ ) {
+        entry[$3][NR]["machineid"] = $3
+        entry[$3][NR]["dataset"] = $1
+        entry[$3][NR]["name"] = $4
+        entry[$3][NR]["device"] = $6
+        entry[$3][NR]["initrds"] = $7
+        entry[$3][NR]["kernels"] = $8
+        entry[$3][NR]["last_booted_kernel"] = $9
+        entry[$3][NR]["zsys"] = $2
+        entry[$3][NR]["lastused"] = $5
+    }
 
 }
 
