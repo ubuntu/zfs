@@ -67,7 +67,7 @@ validate_system_dataset() {
     local mount_path="${mntdir}/${directory}"
 
     if zfs list "${dataset}" >/dev/null 2>&1; then
-        if ! mount -o zfsutil -t zfs "${dataset}" "${mount_path}"; then
+        if ! mount -o noatime,zfsutil -t zfs "${dataset}" "${mount_path}"; then
             grub_warn "Failed to find a valid directory '${directory}' for dataset '${dataset}@${snapshot_name}'. Ignoring"
             return
         fi
@@ -116,7 +116,7 @@ get_system_directory() {
     if [ -f "${etc_dir}/fstab" ]; then
         mount_args=$(awk '/^[^#].*\s\/'"${directory}"'\s/ {print "-t", $3, $1}' "${etc_dir}/fstab")
         if [ -n "${mount_args}" ]; then
-            mount ${mount_args} "${candidate_path}"
+            mount -o noatime ${mount_args} "${candidate_path}"
             directory_in_fstab="true"
         fi
     fi
@@ -226,7 +226,7 @@ get_dataset_info() {
         is_snapshot="true"
     fi
 
-    mount -o zfsutil -t zfs "${base_dataset}" "${mntdir}"
+    mount -o noatime,zfsutil -t zfs "${base_dataset}" "${mntdir}"
 
     # read machine-id/os-release from /etc
     etc_dir=$(get_system_directory "${dataset}" "etc" "true" "${mntdir}" "")
