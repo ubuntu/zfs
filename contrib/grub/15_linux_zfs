@@ -43,9 +43,13 @@ get_pools() {
     zpool list | awk '{if (NR>1) print $1}'
 }
 
-# List all the dataset with a root mountpoint
+# List all the dataset with a root mountpoint, starting with current mounted one
 get_root_datasets() {
-    zfs list -H -oname,canmount,mountpoint -t filesystem | awk '/\t(on|noauto)\t\/$/ {print $1}'
+    # First, mountpoint=/ and mounted=on for current root dataset
+    current_root_dataset=$(zfs list -H -oname,mounted,mountpoint -t filesystem | awk '/\tyes\t\/$/ {print $1}')
+    echo "${current_root_dataset}"
+    # Then, the rest
+    zfs list -H -oname,canmount,mountpoint -t filesystem | awk '/\t(on|noauto)\t\/$/ {print $1}' | grep -vw "${current_root_dataset}"
 }
 
 # find if given datasets can be mounted for directory and return its path (snapshot or real path)
