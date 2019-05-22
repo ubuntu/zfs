@@ -43,13 +43,9 @@ get_pools() {
     zpool list | awk '{if (NR>1) print $1}'
 }
 
-# List all the dataset with a root mountpoint, starting with current mounted one
+# List all the dataset with a root mountpoint
 get_root_datasets() {
-    # First, mountpoint=/ and mounted=on for current root dataset
-    current_root_dataset=$(zfs list -H -oname,mounted,mountpoint -t filesystem | awk '/\tyes\t\/$/ {print $1}')
-    echo "${current_root_dataset}"
-    # Then, the rest
-    zfs list -H -oname,canmount,mountpoint -t filesystem | awk '/\t(on|noauto)\t\/$/ {print $1}' | grep -vw "${current_root_dataset}"
+    zfs list -H -oname,canmount,mountpoint -t filesystem | awk '/\t(on|noauto)\t\/$/ {print $1}'
 }
 
 # find if given datasets can be mounted for directory and return its path (snapshot or real path)
@@ -330,9 +326,20 @@ get_dataset_info() {
         creation_date="$(LC_TIME=POSIX zfs get -H creation "${dataset}" | awk -F '\t' '{print $3}')"
         # Convert to epoch
         last_used=$(date -d "${creation_date}" +%s)
-    # otherwise, last_used is manually marked at boot/shutdown on a root dataset by zsys or - for non zsys
+    # otherwise, last_used is manually marked at boot/shutdown on a root dataset for zsys
     else
-        last_used=$(zfs get -H org.zsys:last-used "${dataset}" | awk '{print $3}')
+        # if current system, take current time
+        if zfs mount | awk '/\s+\/$/ {print $1}' | grep -q ${dataset}; then
+            last_used=$(date +%s)
+        else
+            last_used=$(zfs get -H org.zsys:last-used "${dataset}" | awk '{print $3}')
+            # case of non zsys, or zsys without annotation, take /etc/machine-id stat (as we mounted with noatime).
+            # However, as systems can be relatime, if system is current mounted one, set current time (case of clone + reboot
+            # within the same d).
+            if [ "${last_used}" = "-" ]; then
+                last_used=$(stat --printf="%X" "${mntdir}/etc/machine-id")
+            fi
+        fi
     fi
 
     is_zsys=$(zfs get -H org.zsys:bootfs "${base_dataset}" | awk '{print $3}')
