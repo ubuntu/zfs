@@ -433,8 +433,9 @@ function print_advanced_entries(m) {
     for ( k in kernels ) {
         was_last_used_kernel = "false"
 
-        sub(/^.*\//, "", kernels[k])
-        if ( kernels[k] == m["last_booted_kernel"] ) {
+        kernelbasename = kernels[k]
+        sub(/^.*\//, "", kernelbasename)
+        if ( kernelbasename == m["last_booted_kernel"] ) {
             was_last_used_kernel = "true"
         }
 
@@ -519,7 +520,9 @@ function print_history_entries(records, m) {
                 # Take latest by default
                 chosen_kernel_index = 1
                 for ( k in kernels ) {
-                    if ( kernels[k] == records[r]["last_booted_kernel"] ) {
+                    kernelbasename = kernels[k]
+                    sub(/^.*\//, "", kernelbasename)
+                    if ( kernelbasename == records[r]["last_booted_kernel"] ) {
                         chosen_kernel_index = k
                     }
                 }
