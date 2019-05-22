@@ -433,6 +433,7 @@ function print_advanced_entries(m) {
     for ( k in kernels ) {
         was_last_used_kernel = "false"
 
+        sub(/^.*\//, "", kernels[k])
         if ( kernels[k] == m["last_booted_kernel"] ) {
             was_last_used_kernel = "true"
         }
