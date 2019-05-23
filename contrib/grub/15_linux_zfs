@@ -501,7 +501,7 @@ function print_history_entries(records, m) {
 
                 # Append snapshot date
                 if ( records[r]["lastused"] != 0 ) {
-                    date = strftime("%x @ %X", records[r]["lastused"])
+                    date = strftime("%x @ %H:%M", records[r]["lastused"])
                     if ( name != "" ) {
                         name = sprintf("%s on %s", name, date)
                     } else {
