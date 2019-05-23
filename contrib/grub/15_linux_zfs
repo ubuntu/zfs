@@ -470,7 +470,7 @@ function print_history_entries(records, m) {
     }
 
     n = asort(last_used, last_used_sorted)
-    # Traverse snapshots in reverse order
+    # Traverse snapshots/clone in reverse order
     for (i = n; i > 0; i--) {
         for (r in records) {
             if (records[r]["lastused"] == last_used_sorted[i]) {
@@ -483,16 +483,15 @@ function print_history_entries(records, m) {
                     sub(".*/", "", snapname)
                 }
 
+                is_autozsys=0
                 # We keep the snapname only if it is not only a zsys auto snapshot
-                if ( match(snapname, "^autozsys_") != 0 ) {
-                    name = "zsyssnapshot"
-                } else {
+                if ( match(snapname, "^autozsys_") == 0 ) {
                     name = snapname
                 }
 
                 # Append version name if different from main dataset (snapshot before a release upgrade)
                 if ( records[r]["name"] != main_dataset_name ) {
-                    if ( name != "zsyssnapshot" ) {
+                    if ( name != "" ) {
                         name = sprintf("%s, %s", name, records[r]["name"])
                     } else {
                         name = records[r]["name"]
@@ -890,3 +889,4 @@ case "${GRUB_LINUX_ZFS_TEST}" in
         echo "${grub_menu}"
     ;;
 esac
+
