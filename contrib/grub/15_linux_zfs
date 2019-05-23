@@ -453,6 +453,7 @@ function print_advanced_entries(m) {
 function print_history_entries(records, m) {
 
     main_dataset_name = m["name"]  # Save it because the record is deleted afterwards
+    main_dataset = m["dataset"]
 
     # Creates an array of last_used that will then sort and traverse in
     # reverse order to display snapshot from most newest to oldest and ending
@@ -480,10 +481,9 @@ function print_history_entries(records, m) {
                 if ( index(records[r]["dataset"], "@") > 0  ) {
                     sub(".*@", "", snapname)
                 } else {
-                    sub(".*/", "", snapname)
+                    sub(main_dataset "_", "", snapname)
                 }
 
-                is_autozsys=0
                 # We keep the snapname only if it is not only a zsys auto snapshot
                 if ( match(snapname, "^autozsys_") == 0 ) {
                     name = snapname
