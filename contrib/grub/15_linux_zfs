@@ -482,6 +482,9 @@ function print_history_entries(records, m) {
                     sub(".*@", "", snapname)
                 } else {
                     sub(main_dataset "_", "", snapname)
+
+                    # Handle manual user clone (not prefixed by "main_dataset_")
+                    sub(".*/", "", snapname)
                 }
 
                 # We keep the snapname only if it is not only a zsys auto snapshot
