@@ -765,8 +765,8 @@ generate_grub_menu() {
 
     print_menu_prologue
 
-    # Beware: IFS is set to TAB (ASCII 0x09)
-    echo "${menu_metadata}" | while IFS='	' read -r machineid iszsys section name dataset device initrd kernel opt; do
+    # IFS is set to TAB (ASCII 0x09)
+    echo "${menu_metadata}" | while IFS="$(printf '\t')" read -r machineid iszsys section name dataset device initrd kernel opt; do
 
         if [ "${last_section}" != "${section}" -a -n "${last_section}" ]; then
             # Close previous section wrapper
