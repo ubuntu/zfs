@@ -451,7 +451,6 @@ function print_advanced_entries(m) {
 # param records: List of records for a given machine id
 # param m: Main entry for this machine id
 function print_history_entries(records, m) {
-
     main_dataset_name = m["name"]  # Save it because the record is deleted afterwards
     main_dataset = m["dataset"]
 
@@ -476,7 +475,7 @@ function print_history_entries(records, m) {
         for (r in records) {
             if (records[r]["lastused"] == last_used_sorted[i]) {
                 name = ""
-                # Compute snap/filesystem dataset name
+                # Compute snapshot/filesystem dataset name
                 snapname = records[r]["dataset"]
                 if ( index(records[r]["dataset"], "@") > 0  ) {
                     sub(".*@", "", snapname)
@@ -488,27 +487,32 @@ function print_history_entries(records, m) {
                 }
 
                 # We keep the snapname only if it is not only a zsys auto snapshot
-                if ( match(snapname, "^autozsys_") == 0 ) {
-                    name = snapname
+                if ( match(snapname, "^autozsys_") != 0 ) {
+                    snapname = ""
                 }
 
-                # Append version name if different from main dataset (snapshot before a release upgrade)
+                # We keep the release only if it different from main dataset release (snapshot before a release upgrade)
+                releasename = ""
                 if ( records[r]["name"] != main_dataset_name ) {
-                    if ( name != "" ) {
-                        name = sprintf("%s, %s", name, records[r]["name"])
-                    } else {
-                        name = records[r]["name"]
-                    }
+                    releasename = records[r]["name"]
                 }
 
-                # Append snapshot date
-                if ( records[r]["lastused"] != 0 ) {
-                    date = strftime("%x @ %H:%M", records[r]["lastused"])
-                    if ( name != "" ) {
-                        name = sprintf("%s on %s", name, date)
-                    } else {
-                        name = sprintf("on %s", date)
-                    }
+                # Snapshot date
+                date = strftime("%x @ %H:%M", records[r]["lastused"])
+
+                # For snapshots/clones the name can have the following formats:
+                # 	<DATE>: autozsys, same release
+                #   <OLD_RELEASE> on <DATE>: autozsys, different release
+                #   <SNAPNAME> on <DATE>: Manual snapshot, same release
+                #   <SNAPNAME>, <OLD_RELEASE> on <DATE>: Manual snapshot, different release
+                if (snapname == "" && releasename == "") {
+                    name = date
+                } else if (snapname == "" && releasename != "") {
+                    name = sprintf("%s on %s", releasename, date)
+                } else if (snapname != "" && releasename == "") {
+                    name = sprintf("%s on %s", snapname, date)
+                } else { # snapname != "" && releasename != ""
+                    name = sprintf("%s, %s on %s", snapname, releasename, date)
                 }
 
                 # Choose kernel and initrd if the snapshot was booted successfully on a specific kernel before
@@ -813,9 +817,9 @@ generate_grub_menu() {
                 fi
 
                 if [ "${iszsys}" = "yes" ]; then
-                    title="$(gettext_printf "Revert %s to %s" "${main_dataset_name}" "${name}" | grub_quote)"
+                    title="$(gettext_printf "Revert to %s" "${name}" | grub_quote)"
                 else
-                    title="$(gettext_printf "Boot %s on %s" "${main_dataset_name}" "${name}" | grub_quote)"
+                    title="$(gettext_printf "Boot on %s" "${name}" | grub_quote)"
                 fi
                 echo "	submenu '${title}' \${menuentry_id_option} 'gnulinux-history-${dataset}' {"
 
