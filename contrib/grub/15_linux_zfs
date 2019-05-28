@@ -734,6 +734,10 @@ generate_grub_menu() {
     local main_dataset_name=""
     local main_dataset=""
 
+    if [ -z "${menu_metadata}" ]; then
+        return
+    fi
+
     CLASS="--class gnu-linux --class gnu --class os"
 
     if [ "${GRUB_DISTRIBUTOR}" = "" ] ; then
