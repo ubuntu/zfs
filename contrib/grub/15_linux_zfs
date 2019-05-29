@@ -867,6 +867,20 @@ generate_grub_menu() {
     echo "}"
 }
 
+# don't add trailing newline of variable is empty
+# $1: content to write
+# $2: destination file
+trailing_newline_if_not_empty() {
+    content="$1"
+    dest="$2"
+
+    if [ -z "${content}" ]; then
+        touch "${dest}"
+        return
+    fi
+    echo "${content}" > "${dest}"
+}
+
 # Import all available pools on the system
 _=$(get_pools)
 
@@ -874,19 +888,19 @@ GRUB_LINUX_ZFS_TEST="${GRUB_LINUX_ZFS_TEST:-}"
 case "${GRUB_LINUX_ZFS_TEST}" in
     bootlist)
         boot_list="$(bootlist ${MNTDIR})"
-        echo "${boot_list}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+        trailing_newline_if_not_empty "${boot_list}" "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
         break
     ;;
     metamenu)
         boot_list="$(cat ${GRUB_LINUX_ZFS_TEST_INPUT})"
         menu_metadata="$(generate_grub_menu_metadata "${boot_list}")"
-        echo "${menu_metadata}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+        trailing_newline_if_not_empty "${menu_metadata}" "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
         break
     ;;
     grubmenu)
         menu_metadata="$(cat ${GRUB_LINUX_ZFS_TEST_INPUT})"
         grub_menu=$(generate_grub_menu "${menu_metadata}")
-        echo "${grub_menu}" > "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
+        trailing_newline_if_not_empty "${grub_menu}" "${GRUB_LINUX_ZFS_TEST_OUTPUT}"
         break
     ;;
     *)
@@ -896,7 +910,9 @@ case "${GRUB_LINUX_ZFS_TEST}" in
         menu_metadata="$(generate_grub_menu_metadata "${boot_list}")"
         # Create boot menu meta data from the list of boot entries
         grub_menu="$(generate_grub_menu "${menu_metadata}")"
-        echo "${grub_menu}"
+        if [ -n "${grub_menu}" ]; then
+            # We want the trailing newline as a marker will be added
+            echo "${grub_menu}"
+        fi
     ;;
 esac
-
