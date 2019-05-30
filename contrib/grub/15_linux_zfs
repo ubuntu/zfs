@@ -15,6 +15,11 @@ gfxpayload_dynamic="1"
 
 set -eu
 
+## Skip early if zfs utils isn't installed (instead of failing on first zpool list)
+if ! `which zfs >/dev/null 2>&1`; then
+    exit 0
+fi
+
 initial_pools="$(zpool list | awk '{if (NR>1) print $1}')"
 MNTDIR="$(mktemp -d ${TMPDIR:-/tmp}/zfsmnt.XXXXXX)"
 ZFSTMP="$(mktemp -d ${TMPDIR:-/tmp}/zfstmp.XXXXXX)"
